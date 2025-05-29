@@ -16,5 +16,14 @@
         <Link>README.md</Link>
       </Content>
     </ItemGroup>
+<PropertyGroup>
+  <!-- Identity -->
+  <PackageId>DomsUtils</PackageId>
+  <Version>1.0.0</Version>
+  <Authors>Dominik Esseenhofer</Authors>
+  <Company>Doms Stuff</Company>
 
+  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  <PackageOutputPath>$(OutputPath)</PackageOutputPath>
+</PropertyGroup>
 </Project>
