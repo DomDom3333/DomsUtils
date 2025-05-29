@@ -12,6 +12,9 @@
     </ItemGroup>
 
     <ItemGroup>
+      <Content Include="..\License.md">
+        <Link>License.md</Link>
+      </Content>
       <Content Include="..\README.md">
         <Link>README.md</Link>
       </Content>
