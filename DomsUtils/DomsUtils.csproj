@@ -23,7 +23,14 @@
   <Authors>Dominik Esseenhofer</Authors>
   <Company>Doms Stuff</Company>
 
-  <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageProjectUrl>https://github.com/YourOrg/DomsUtils</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/YourOrg/DomsUtils.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   <PackageOutputPath>$(OutputPath)</PackageOutputPath>
 </PropertyGroup>
 </Project>
