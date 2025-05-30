@@ -1,10 +1,10 @@
 using System;
-using DomsUtils.Classes.BiMap.Children.Observable;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using DomsUtils.DataStructures.BiMap.Children.Observable;
 using JetBrains.Annotations;
 
 namespace DomsUtils.Tests.Classes.BiMap.Children.Observable;

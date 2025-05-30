@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace DomsUtils.Classes.BiMap.Base.Tooling;
+namespace DomsUtils.DataStructures.BiMap.Base.Tooling;
 
 /// <summary>
 /// A custom JSON converter for the BiMap class, enabling serialization and deserialization

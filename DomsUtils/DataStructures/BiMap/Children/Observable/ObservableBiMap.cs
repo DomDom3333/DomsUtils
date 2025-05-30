@@ -2,9 +2,9 @@ using System.Collections;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
-using DomsUtils.Classes.BiMap.Base;
+using DomsUtils.DataStructures.BiMap.Base;
 
-namespace DomsUtils.Classes.BiMap.Children.Observable;
+namespace DomsUtils.DataStructures.BiMap.Children.Observable;
 
 /// <summary>
 /// Represents a bi-directional map with built-in mechanisms to notify observers of any changes in the collection.

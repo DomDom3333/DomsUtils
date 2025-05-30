@@ -5,11 +5,9 @@
         <LangVersion>latestmajor</LangVersion>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <Title>DomsUtils</Title>
+        <Description>Various Utilities and Datastructures</Description>
     </PropertyGroup>
-
-    <ItemGroup>
-      <Folder Include="Classes\" />
-    </ItemGroup>
 
     <ItemGroup>
       <Content Include="..\License.md">
@@ -22,7 +20,7 @@
 <PropertyGroup>
   <!-- Identity -->
   <PackageId>DomsUtils</PackageId>
-  <Version>1.0.0</Version>
+  <Version>1.1.0</Version>
   <Authors>Dominik Esseenhofer</Authors>
   <Company>Doms Stuff</Company>
 

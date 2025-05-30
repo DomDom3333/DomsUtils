@@ -4,10 +4,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
-using DomsUtils.Classes.BiMap.Base;
 using JetBrains.Annotations;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading.Tasks;
+using DomsUtils.DataStructures.BiMap.Base;
 
 namespace DomsUtils.Tests.Classes.BiMap.Base;
 

@@ -4,8 +4,8 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DomsUtils.Classes.BiMap.Base;
-using DomsUtils.Classes.BiMap.Base.Tooling;
+using DomsUtils.DataStructures.BiMap.Base;
+using DomsUtils.DataStructures.BiMap.Base.Tooling;
 using JetBrains.Annotations;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

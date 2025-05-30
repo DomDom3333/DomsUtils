@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace DomsUtils.Classes.BiMap.Base;
+namespace DomsUtils.DataStructures.BiMap.Base;
 
 public interface IBiMap<TKey, TValue> : ICollection<KeyValuePair<TKey, TValue>> where TKey : notnull
 {

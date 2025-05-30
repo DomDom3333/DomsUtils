@@ -1,8 +1,7 @@
-using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace DomsUtils.Classes.BiMap.Base.Tooling;
+namespace DomsUtils.DataStructures.BiMap.Base.Tooling;
 
 public class BiMapJsonConverterFactory : JsonConverterFactory
 {

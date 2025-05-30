@@ -1,6 +1,6 @@
-using DomsUtils.Classes.BiMap.Base;
+using DomsUtils.DataStructures.BiMap.Base;
 
-namespace DomsUtils.Classes.BiMap.Extensions;
+namespace DomsUtils.DataStructures.BiMap.Extensions;
 
 /// <summary>
 /// Contains extension methods for working with instances of <see cref="BiMap{TKey, TValue}"/>.

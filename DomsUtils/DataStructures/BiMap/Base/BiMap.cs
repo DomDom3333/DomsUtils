@@ -1,9 +1,8 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using DomsUtils.Classes.BiMap.Base.Tooling;
 
-namespace DomsUtils.Classes.BiMap.Base;
+namespace DomsUtils.DataStructures.BiMap.Base;
 
 /// <summary>
 /// Represents a bidirectional mapping (BiMap) between keys and values,

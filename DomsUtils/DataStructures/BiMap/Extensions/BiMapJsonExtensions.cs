@@ -1,7 +1,7 @@
 using System.Text.Json;
-using DomsUtils.Classes.BiMap.Base;
+using DomsUtils.DataStructures.BiMap.Base;
 
-namespace DomsUtils.Classes.BiMap.Extensions;
+namespace DomsUtils.DataStructures.BiMap.Extensions;
 
 /// <summary>
 /// Provides extension methods for serializing and deserializing instances of the BiMap class.

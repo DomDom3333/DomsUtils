@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json;
-using DomsUtils.Classes.BiMap.Base;
-using DomsUtils.Classes.BiMap.Extensions;
+using DomsUtils.DataStructures.BiMap.Base;
+using DomsUtils.DataStructures.BiMap.Extensions;
 using JetBrains.Annotations;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-using DomsUtils.Classes.BiMap.Extensions;
-using DomsUtils.Classes.BiMap.Base;
+using DomsUtils.DataStructures.BiMap.Extensions;
 using JetBrains.Annotations;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
