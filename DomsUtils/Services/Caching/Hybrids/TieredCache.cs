@@ -5,9 +5,11 @@ using DomsUtils.Services.Caching.Interfaces.Bases;
 namespace DomsUtils.Services.Caching.Hybrids;
 
 /// <summary>
-/// Represents a multi-tiered caching solution that combines multiple cache implementations.
-/// Allows data migration between caches based on specified rules or triggers.
+/// Represents a tiered caching solution designed to work with multiple cache levels.
+/// Provides functionality for storing, retrieving, and migrating cache entries between tiers.
 /// </summary>
+/// <typeparam name="TKey">The type of cache entry key.</typeparam>
+/// <typeparam name="TValue">The type of cache entry value.</typeparam>
 public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
 {
     /// <summary>

@@ -1,138 +1,321 @@
-﻿using DomsUtils.Services.Caching.Interfaces.Addons;
+﻿using System.Text;
+using System.Text.Json;
+using Amazon.S3;
+using Amazon.S3.Model;
+using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
 
 namespace DomsUtils.Services.Caching.Bases;
 
 /// <summary>
-/// A custom implementation of a cache backed by Amazon S3 storage.
-/// Provides functionality for storing, retrieving, and managing cached values in an S3 bucket.
+/// Represents an Amazon S3-backed caching mechanism that extends the CacheBase class
+/// and implements several interfaces to provide advanced caching functionality.
 /// </summary>
-/// <typeparam name="TValue">The type of value to be cached.</typeparam>
-public class S3Cache<TValue> : CacheBase<string, TValue>, ICacheAvailability, ICacheEnumerable<string>,
+/// <typeparam name="TValue">
+/// The type of the value to be cached.
+/// </typeparam>
+/// <remarks>
+/// This class utilizes S3 as the backing store for the cache. It includes methods
+/// for retrieving, setting, removing keys/values, and clearing the cache. It also
+/// supports event-driven behavior via the <c>OnSet</c> event, and provides features
+/// such as key enumeration and availability checks.
+/// </remarks>
+/// <implements>
+/// ICacheAvailability
+/// ICacheEnumerable
+/// ICacheEvents
+/// </implements>
+/// <events>
+/// <c>OnSet</c> - Occurs when a key-value pair is added or updated in the cache.
+/// </events>
+/// <example>
+/// This class is intended for use in scenarios where S3 is used to store and manage cache data.
+/// </example>
+public class S3Cache<TValue> : CacheBase<string, TValue>, 
+    ICacheAvailability, 
+    ICacheEnumerable<string>, 
     ICacheEvents<string, TValue>
 {
     /// <summary>
-    /// The name of the S3 bucket used for storing cached data.
+    /// Stores the name of the S3 bucket used for caching operations.
     /// </summary>
+    /// <remarks>
+    /// The bucket name is provided during the initialization of the <c>S3Cache</c> instance and
+    /// is validated to ensure it is non‐empty. It is used for all interactions with the
+    /// Amazon S3 client, including retrieving, storing, and deleting cached items.
+    /// </remarks>
     private readonly string _bucketName;
 
     /// <summary>
-    /// An event that is triggered whenever a new key-value pair is set in the cache.
+    /// Represents the Amazon S3 client used for interacting with the S3 service.
+    /// This instance facilitates operations such as retrieving, uploading, removing,
+    /// and listing objects within the Amazon S3 bucket specified by the cache.
+    /// </summary>
+    private readonly IAmazonS3 _s3Client;
+
+    /// <summary>
+    /// Defines serialization options used by the <see cref="S3Cache{TValue}"/> class
+    /// for converting objects to and from JSON format.
     /// </summary>
     /// <remarks>
-    /// The <c>OnSet</c> event is invoked with the key and value as parameters when an item is added or updated in the cache.
-    /// This can be used for logging, monitoring, or triggering additional actions upon setting data in the cache.
+    /// These options are utilized by the underlying <see cref="System.Text.Json.JsonSerializer"/>
+    /// for configuring serialization behavior, such as property naming rules and case sensitivity.
     /// </remarks>
-    /// <typeparamref name="string"/> represents the key type, and <typeparamref name="TValue"/> represents the type of the value stored.
-    /// Implements from <see cref="ICacheEvents{TKey, TValue}"/>.
-    /// </remarks>
-    /// <seealso cref="S3Cache{TValue}"/>
-    /// <seealso cref="TieredCache{TKey, TValue}"/>
-    public event Action<string, TValue> OnSet;
+    private readonly JsonSerializerOptions _serializerOptions;
 
     /// <summary>
-    /// Represents a custom S3-based caching implementation capable of storing values in an S3 bucket.
-    /// Provides caching operations such as get, set, remove, and clear, and supports enumeration of keys and availability checks.
-    /// Extends the <see cref="CacheBase{TKey, TValue}"/> abstract class.
-    /// Implements <see cref="ICacheAvailability"/>, <see cref="ICacheEnumerable{TKey}"/>, and <see cref="ICacheEvents{TKey, TValue}"/>.
+    /// Event triggered when a value is successfully set in the cache.
     /// </summary>
-    /// <typeparam name="TValue">The type of the value to be stored in the cache.</typeparam>
-    public S3Cache(string bucketName)
+    /// <remarks>
+    /// The <c>OnSet</c> event occurs after the value has been successfully saved to the underlying storage.
+    /// It provides the key and the value that were set in the cache as event parameters.
+    /// This event is particularly useful for handling post-save operations, such as logging, monitoring, or notifying other components.
+    /// </remarks>
+    /// <typeparamref name="string"/>: The key associated with the cached value.
+    /// <typeparamref name="TValue"/>: The cached value being set.
+    /// <seealso cref="SetInternal(string, TValue)"/>
+    public event Action<string, TValue> OnSet = delegate { };
+
+    /// <summary>
+    /// Provides a cache implementation that stores and retrieves objects using Amazon S3 as the backend.
+    /// The caller must supply the following dependencies:
+    /// • bucketName: Name of the S3 bucket used for storage. Must be a non-empty string.
+    /// • s3Client:   Pre-configured instance of <see cref="IAmazonS3"/> for S3 API communication.
+    /// Throws <see cref="ArgumentNullException"/> if null.
+    /// • serializerOptions: Optional JSON serializer settings used during serialization/deserialization.
+    /// If omitted, defaults to settings with property name case insensitivity.
+    /// </summary>
+    /// <typeparam name="TValue">
+    /// The type of the values to be stored in the cache. This type should be serializable to JSON.
+    /// </typeparam>
+    public S3Cache(
+        string bucketName,
+        IAmazonS3 s3Client,
+        JsonSerializerOptions? serializerOptions = null)
     {
+        if (string.IsNullOrWhiteSpace(bucketName))
+            throw new ArgumentException("Bucket name must be non‐empty.", nameof(bucketName));
+
         _bucketName = bucketName;
+        _s3Client = s3Client ?? throw new ArgumentNullException(nameof(s3Client));
+        _serializerOptions = serializerOptions 
+                             ?? new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     }
 
     /// <summary>
-    /// Attempts to retrieve a value with the specified key from the internal cache.
+    /// Attempts to retrieve the value associated with the specified key
+    /// from the S3 storage. If the key does not exist or an error occurs,
+    /// the method returns false and outputs the default value for the type.
     /// </summary>
-    /// <param name="key">The key associated with the value to retrieve.</param>
-    /// <param name="value">When this method returns, contains the value associated with the specified key, if the key is found; otherwise, the default value for the type of the value parameter.</param>
-    /// <returns>
-    /// true if the key was found and the value was successfully retrieved; otherwise, false.
-    /// </returns>
+    /// <param name="key">The key of the item to retrieve. Must not be null or empty.</param>
+    /// <param name="value">The value retrieved from S3, if found. If the operation fails, this will contain the default value for the type.</param>
+    /// <returns>True if the item was successfully retrieved; otherwise, false.</returns>
     protected override bool TryGetInternal(string key, out TValue value)
     {
-        value = default;
+        value = default!;
+        if (string.IsNullOrEmpty(key)) return false;
+
         try
         {
-            // Pseudocode for S3
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+            var response = _s3Client
+                .GetObjectAsync(new GetObjectRequest { BucketName = _bucketName, Key = key })
+                .GetAwaiter()
+                .GetResult(); // keeping synchronous for CacheBase
 
-    /// <summary>
-    /// Sets a key-value pair in the cache by uploading the value to the underlying storage mechanism.
-    /// This method is responsible for the actual implementation of storing the value, specific to the derived class.
-    /// </summary>
-    /// <param name="key">The key associated with the value to be stored in the cache.</param>
-    /// <param name="value">The value to be stored in the cache.</param>
-    protected override void SetInternal(string key, TValue value)
-    {
-        // Pseudocode: upload JSON to S3
-        OnSet?.Invoke(key, value);
-    }
+            using (response.ResponseStream)
+            {
+                // Deserialize directly from the response stream
+                value = JsonSerializer.Deserialize<TValue>(
+                    response.ResponseStream, 
+                    _serializerOptions
+                )!;
+            }
 
-    /// <summary>
-    /// Attempts to remove a cached item specified by the given key.
-    /// </summary>
-    /// <param name="key">The key of the item to be removed from the cache.</param>
-    /// <returns>
-    /// A boolean value indicating whether the removal operation was successful.
-    /// Returns <c>true</c> if the item was successfully removed; otherwise, <c>false</c>.
-    /// </returns>
-    protected override bool RemoveInternal(string key)
-    {
-        try
-        {
             return true;
         }
+        catch (AmazonS3Exception s3Ex) when (s3Ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Key doesn’t exist
+            return false;
+        }
         catch
         {
+            // If you have a logging framework, log the exception here.
             return false;
         }
     }
 
     /// <summary>
-    /// Clears all entries from the cache by removing all keys associated with the underlying storage.
-    /// Implementations of this method should ensure that all cached data is fully cleared
-    /// and the cache is reset to an empty state.
+    /// Serializes the specified <paramref name="value"/> to JSON and uploads it to an S3 bucket under the specified <paramref name="key"/>.
+    /// </summary>
+    /// <param name="key">A non-empty string specifying the object key in the S3 bucket. Throws <see cref="ArgumentException"/> if null or empty.</param>
+    /// <param name="value">The value to be serialized and uploaded to S3. Cannot be null.</param>
+    protected override void SetInternal(string key, TValue value)
+    {
+        if (string.IsNullOrEmpty(key))
+            throw new ArgumentException("Key must be non‐empty.", nameof(key));
+
+        // Serialize the value to a UTF‐8 byte array
+        var json = JsonSerializer.Serialize(value, _serializerOptions);
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        using var ms = new MemoryStream(bytes);
+        var request = new PutObjectRequest
+        {
+            BucketName  = _bucketName,
+            Key         = key,
+            InputStream = ms,
+            ContentType = "application/json"
+        };
+
+        try
+        {
+            _s3Client
+                .PutObjectAsync(request)
+                .GetAwaiter()
+                .GetResult();
+                
+            // Fire the event *after* a successful upload
+            OnSet?.Invoke(key, value);
+        }
+        catch
+        {
+            // Swallow or log the exception so a failing S3 write doesn’t kill the app.
+            // If you have a logger, call logger.LogError(...) here.
+        }
+    }
+
+    /// <summary>
+    /// Removes an object from the S3 bucket using the provided key.
+    /// Returns <c>true</c> if the object was successfully removed or found;
+    /// returns <c>false</c> if the key was not found or removal failed.
+    /// </summary>
+    /// <param name="key">The key of the object to be removed from the S3 bucket. Must not be null or empty.</param>
+    /// <returns>Returns <c>true</c> if the object existed and was removed successfully, or <c>false</c> otherwise.</returns>
+    protected override bool RemoveInternal(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return false;
+
+        try
+        {
+            _s3Client
+                .DeleteObjectAsync(_bucketName, key)
+                .GetAwaiter()
+                .GetResult();
+                
+            return true;
+        }
+        catch (AmazonS3Exception s3Ex) when (s3Ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Key didn’t exist
+            return false;
+        }
+        catch
+        {
+            // Log or ignore
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Clears all objects from the cache by using a batching mechanism to delete chunks of up to 1000 items at a time.
+    /// Utilizes the DeleteObjects API for efficient bulk deletion of keys.
+    /// This operation is internal to ensure controlled clearing of the associated S3 bucket contents.
     /// </summary>
     protected override void ClearInternal()
     {
-        // Pseudocode: remove all keys in bucket/prefix
+        const int batchSize = 1000;
+        var listRequest = new ListObjectsV2Request
+        {
+            BucketName = _bucketName,
+            MaxKeys    = batchSize
+        };
+
+        ListObjectsV2Response listResponse;
+        do
+        {
+            listResponse = _s3Client
+                .ListObjectsV2Async(listRequest)
+                .GetAwaiter()
+                .GetResult();
+
+            if (listResponse.S3Objects.Count > 0)
+            {
+                // Build a batch delete request
+                var deleteRequest = new DeleteObjectsRequest
+                {
+                    BucketName = _bucketName,
+                    Objects = listResponse.S3Objects
+                        .Select(o => new KeyVersion { Key = o.Key })
+                        .ToList()
+                };
+
+                try
+                {
+                    _s3Client
+                        .DeleteObjectsAsync(deleteRequest)
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch
+                {
+                }
+            }
+
+            listRequest.ContinuationToken = listResponse.NextContinuationToken;
+        }
+        while (listResponse.IsTruncated == true);
     }
 
     /// <summary>
-    /// Retrieves a collection of all cache keys stored in the current cache.
+    /// Checks whether the S3Cache is available by attempting to access the S3 bucket.
+    /// If the bucket is accessible, the cache is considered available; otherwise, it is not.
     /// </summary>
     /// <returns>
-    /// An <see cref="IEnumerable{T}"/> containing all keys present in the cache.
-    /// </returns>
-    public IEnumerable<string> Keys()
-    {
-        // Pseudocode: list objects in bucket/prefix and yield keys
-        return Enumerable.Empty<string>();
-    }
-
-    /// <summary>
-    /// Indicates the availability of the cache for operation handling.
-    /// </summary>
-    /// <returns>
-    /// True if the cache is available; otherwise, false.
+    /// A boolean value indicating the availability of the S3Cache:
+    /// true if the cache is available; false otherwise.
     /// </returns>
     public override bool IsAvailable()
     {
         try
         {
+            _s3Client
+                .GetBucketLocationAsync(new GetBucketLocationRequest { BucketName = _bucketName })
+                .GetAwaiter()
+                .GetResult();
             return true;
         }
         catch
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Retrieves all keys currently stored in the associated S3 bucket by paging through the bucket contents.
+    /// </summary>
+    /// <returns>Enumerable collection of all keys present in the S3 bucket.</returns>
+    public IEnumerable<string> Keys()
+    {
+        var listRequest = new ListObjectsV2Request
+        {
+            BucketName = _bucketName,
+            MaxKeys    = 1000
+        };
+
+        ListObjectsV2Response listResponse;
+        do
+        {
+            listResponse = _s3Client
+                .ListObjectsV2Async(listRequest)
+                .GetAwaiter()
+                .GetResult();
+
+            foreach (var obj in listResponse.S3Objects)
+                yield return obj.Key;
+
+            listRequest.ContinuationToken = listResponse.NextContinuationToken;
+        }
+        while (listResponse.IsTruncated == true);
     }
 }

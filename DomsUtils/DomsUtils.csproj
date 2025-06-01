@@ -17,6 +17,10 @@
         <Link>README.md</Link>
       </Content>
     </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="AWSSDK.S3" Version="4.0.1" />
+    </ItemGroup>
 <PropertyGroup>
   <!-- Identity -->
   <PackageId>DomsUtils</PackageId>

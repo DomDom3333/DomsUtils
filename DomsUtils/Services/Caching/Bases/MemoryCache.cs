@@ -4,10 +4,19 @@ using DomsUtils.Services.Caching.Interfaces.Bases;
 namespace DomsUtils.Services.Caching.Bases;
 
 /// <summary>
-/// Represents a thread-safe in-memory cache with support for events, enumeration, and availability checks.
+/// Represents an in-memory cache implementation that uses key-value pairs for storing data.
 /// </summary>
-/// <typeparam name="TKey">The type of the keys used to identify values in the cache.</typeparam>
-/// <typeparam name="TValue">The type of the values stored in the cache.</typeparam>
+/// <typeparam name="TKey">The type of the cache entry key.</typeparam>
+/// <typeparam name="TValue">The type of the cache entry value.</typeparam>
+/// <remarks>
+/// This class provides thread-safe caching operations and supports events for cache manipulation.
+/// It inherits from <see cref="CacheBase{TKey, TValue}"/> and implements the following interfaces:
+/// <list type="bullet">
+/// <item><see cref="ICacheAvailability"/></item>
+/// <item><see cref="ICacheEnumerable{TKey}"/></item>
+/// <item><see cref="ICacheEvents{TKey, TValue}"/></item>
+/// </list>
+/// </remarks>
 public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailability, ICacheEnumerable<TKey>,
     ICacheEvents<TKey, TValue> where TKey : notnull
 {

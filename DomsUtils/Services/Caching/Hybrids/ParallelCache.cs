@@ -3,10 +3,11 @@
     namespace DomsUtils.Services.Caching.Hybrids;
 
     /// <summary>
-    /// Represents a hybrid cache that performs read and write operations across multiple caches in parallel.
-    /// The cache attempts to retrieve data from the first available cache in priority order.
-    /// Implements ICache for standard cache operations and ICacheAvailability to monitor availability status.
+    /// Represents a hybrid caching mechanism that uses multiple underlying caches to store and retrieve data.
+    /// Reads are performed in priority order, and writes are executed in parallel across all caches.
     /// </summary>
+    /// <typeparam name="TKey">The type of the keys used for identifying cached entries.</typeparam>
+    /// <typeparam name="TValue">The type of the values being cached.</typeparam>
     public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability
     {
         /// <summary>

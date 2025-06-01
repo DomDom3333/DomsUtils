@@ -5,9 +5,17 @@ using DomsUtils.Services.Caching.Interfaces.Bases;
 namespace DomsUtils.Services.Caching.Bases;
 
 /// <summary>
-/// File-based cache implementation for generic values, supporting cache availability and key enumeration.
+/// Represents a file-based caching system for storing and retrieving objects of a specified type.
+/// Provides an efficient mechanism for managing cache using a file system for persistence.
 /// </summary>
-/// <typeparam name="TValue">The type of values to be stored in the cache.</typeparam>
+/// <typeparam name="TValue">
+/// The type of values to be stored in the cache.
+/// </typeparam>
+/// <remarks>
+/// This class extends <see cref="CacheBase{TKey, TValue}"/> and implements <see cref="ICacheAvailability"/>
+/// and <see cref="ICacheEnumerable{TKey}"/> to provide functionality for checking cache availability
+/// and enumerating stored keys.
+/// </remarks>
 public class FileCache<TValue> : CacheBase<string, TValue>, ICacheAvailability, ICacheEnumerable<string>
 {
     /// <summary>
