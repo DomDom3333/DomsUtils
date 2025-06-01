@@ -271,6 +271,49 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// </summary>
     public void Dispose()
     {
-        _timer?.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Flag to track whether Dispose has been called.
+    /// </summary>
+    private bool _disposed = false;
+
+    /// <summary>
+    /// Releases the unmanaged resources used by the TieredCache and optionally releases the managed resources.
+    /// </summary>
+    /// <param name="disposing">true to release both managed and unmanaged resources; false to release only unmanaged resources.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        if (disposing)
+        {
+            // Dispose managed resources
+            _timer?.Dispose();
+
+            // Dispose any IDisposable caches
+            foreach (var cache in _caches)
+            {
+                if (cache is IDisposable disposableCache)
+                {
+                    disposableCache.Dispose();
+                }
+            }
+        }
+
+        // Clean up unmanaged resources here (none in this case)
+
+        _disposed = true;
+    }
+
+    /// <summary>
+    /// Finalizer to ensure resources are cleaned up if Dispose is not called.
+    /// </summary>
+    ~TieredCache()
+    {
+        Dispose(false);
     }
 }
