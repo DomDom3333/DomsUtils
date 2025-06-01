@@ -72,7 +72,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// <returns>True if the specified key exists in the cache; otherwise, false.</returns>
     protected override bool TryGetInternal(TKey key, out TValue value)
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             return _cache.TryGetValue(key, out value);
         }
@@ -98,7 +98,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// <param name="value">The value to be stored in the cache for the specified key.</param>
     protected override void SetInternal(TKey key, TValue value)
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             _cache[key] = value;
         }
@@ -113,7 +113,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// </returns>
     protected override bool RemoveInternal(TKey key)
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             return _cache.Remove(key);
         }
@@ -126,7 +126,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// </summary>
     protected override void ClearInternal()
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             _cache.Clear();
         }
@@ -140,7 +140,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// </returns>
     public IEnumerable<TKey> Keys()
     {
-        lock (_lock)
+        using (_lock.EnterScope())
         {
             return _cache.Keys.ToList();
         }
@@ -158,7 +158,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
         var testValue = default(TValue);
         try
         {
-            lock (_lock)
+            using (_lock.EnterScope())
             {
                 // Try to add and retrieve a dummy value
                 _cache[testKey] = testValue;
