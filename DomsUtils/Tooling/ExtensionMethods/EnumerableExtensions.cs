@@ -23,7 +23,7 @@ public static class EnumerableExtensions
         if (source is ICollection<T> col) return col.Count == 0;
         if (source is System.Collections.ICollection ncol) return ncol.Count == 0;
         // Fallback: enumerator check for emptiness only
-        using var e = source.GetEnumerator();
+        using IEnumerator<T> e = source.GetEnumerator();
         return !e.MoveNext();
     }
 
@@ -40,7 +40,7 @@ public static class EnumerableExtensions
         if (source == null) return false;
         if (source is ICollection<T> col) return col.Count > 0;
         if (source is System.Collections.ICollection ncol) return ncol.Count > 0;
-        using var e = source.GetEnumerator();
+        using IEnumerator<T> e = source.GetEnumerator();
         return e.MoveNext();
     }
 
@@ -54,7 +54,7 @@ public static class EnumerableExtensions
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(action);
-        foreach (var item in source)
+        foreach (T item in source)
             action(item);
     }
 
@@ -69,7 +69,7 @@ public static class EnumerableExtensions
     public static IEnumerable<T> WhereNotNull<T>(this IEnumerable<T?>? source) where T : class
     {
         if (source is null) yield break;
-        foreach (var item in source)
+        foreach (T? item in source)
             if (item != null) yield return item;
     }
 
@@ -84,7 +84,7 @@ public static class EnumerableExtensions
     public static IEnumerable<T> WhereNotNull<T>(this IEnumerable<T?>? source) where T : struct
     {
         if (source is null) yield break;
-        foreach (var item in source)
+        foreach (T? item in source)
             if (item.HasValue) yield return item.Value;
     }
 
@@ -103,7 +103,7 @@ public static class EnumerableExtensions
         // Optimize for IList
         if (source is IList<T> list)
             return list.Count > 0 ? list[0] : default;
-        using var e = source.GetEnumerator();
+        using IEnumerator<T> e = source.GetEnumerator();
         return e.MoveNext() ? e.Current : default;
     }
 
@@ -125,7 +125,7 @@ public static class EnumerableExtensions
         // Fallback: normal approach
         T? result = default;
         bool found = false;
-        foreach (var item in source)
+        foreach (T item in source)
         {
             result = item;
             found = true;

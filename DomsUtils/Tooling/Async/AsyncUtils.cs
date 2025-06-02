@@ -56,7 +56,7 @@ public static class AsyncUtils
         {
             try
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cts.Token.ThrowIfCancellationRequested();
                 await func().ConfigureAwait(false);
             }
@@ -78,8 +78,8 @@ public static class AsyncUtils
         this Task<T> task,
         TimeSpan timeout)
     {
-        var delayTask = Task.Delay(timeout);
-        var completed = await Task.WhenAny(task, delayTask).ConfigureAwait(false);
+        Task delayTask = Task.Delay(timeout);
+        Task completed = await Task.WhenAny(task, delayTask).ConfigureAwait(false);
         if (completed == task)
             return await task.ConfigureAwait(false);
         throw new TimeoutException($"Operation timed out after {timeout}");
@@ -94,7 +94,7 @@ public static class AsyncUtils
         TimeSpan? initialDelay = null)
     {
         initialDelay ??= TimeSpan.FromSeconds(1);
-        var delay = initialDelay.Value;
+        TimeSpan delay = initialDelay.Value;
         for (int attempt = 0; ; attempt++)
         {
             try

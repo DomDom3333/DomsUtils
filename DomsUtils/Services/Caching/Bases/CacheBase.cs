@@ -1,4 +1,5 @@
-﻿using DomsUtils.Services.Caching.Interfaces.Bases;
+﻿using DomsUtils.Services.Caching.Interfaces.Addons;
+using DomsUtils.Services.Caching.Interfaces.Bases;
 
 namespace DomsUtils.Services.Caching.Bases;
 
@@ -9,7 +10,7 @@ namespace DomsUtils.Services.Caching.Bases;
 /// </summary>
 /// <typeparam name="TKey">The type of the key for identifying cached entries.</typeparam>
 /// <typeparam name="TValue">The type of the value to be stored in the cache.</typeparam>
-public abstract class CacheBase<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability
+public abstract class CacheBase<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability, ICacheEnumerable<TKey>
 {
     /// <summary>
     /// Attempts to retrieve the value associated with the specified key from the cache.
@@ -90,4 +91,12 @@ public abstract class CacheBase<TKey, TValue> : ICache<TKey, TValue>, ICacheAvai
     /// true if the cache is available and operational; otherwise, false.
     /// </returns>
     public abstract bool IsAvailable();
+
+    /// <summary>
+    /// Gets an enumerable collection of all keys currently stored in the cache.
+    /// </summary>
+    /// <returns>
+    /// An enumerable collection of keys contained in the cache. If the cache is empty, the returned collection is empty.
+    /// </returns>
+    public abstract IEnumerable<TKey> Keys();
 }

@@ -20,11 +20,12 @@
 
     <ItemGroup>
       <PackageReference Include="AWSSDK.S3" Version="4.0.1" />
+      <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     </ItemGroup>
 <PropertyGroup>
   <!-- Identity -->
   <PackageId>DomsUtils</PackageId>
-  <Version>1.4.0</Version>
+  <Version>1.4.1</Version>
   <Authors>Dominik Esseenhofer</Authors>
   <Company>Doms Stuff</Company>
 

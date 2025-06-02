@@ -1,5 +1,7 @@
 ﻿using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DomsUtils.Services.Caching.Hybrids;
 
@@ -63,6 +65,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     private readonly CacheDirection _cacheDirection;
     private readonly MigrationStrategy _migrationStrategy;
     private readonly Timer? _migrationTimer;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Represents a caching mechanism that uses multiple cache tiers with directional priority.
@@ -89,15 +92,15 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         _tiers = new List<ICache<TKey, TValue>>(tiers).ToArray();
         _cacheDirection = cacheDirection;
         _migrationStrategy = migrationStrategy;
-        var migrationInterval1 = migrationInterval ?? TimeSpan.Zero;
+        _logger = NullLogger.Instance;
 
-        if (migrationInterval1 > TimeSpan.Zero)
+        _logger.LogInformation("DirectionalTierCache initialized with {TierCount} tiers.", _tiers.Length);
+
+        if (migrationInterval.HasValue && migrationInterval.Value > TimeSpan.Zero)
         {
             // Delay first tick by _migrationInterval, then repeat at that interval
-            _migrationTimer = new Timer(_ => CheckAndMigrateAll(), 
-                null, 
-                migrationInterval1, 
-                migrationInterval1);
+            _migrationTimer = new Timer(_ => CheckAndMigrateAll(), null, migrationInterval.Value, migrationInterval.Value);
+            _logger.LogInformation("Migration timer started with interval {Interval}.", migrationInterval.Value);
         }
     }
 
@@ -108,7 +111,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     {
         get
         {
-            foreach (var tier in _tiers)
+            foreach (ICache<TKey, TValue> tier in _tiers)
             {
                 if (tier is ICacheAvailability a)
                 {
@@ -138,22 +141,24 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// </returns>
     public bool TryGet(TKey key, out TValue value)
     {
-        // local to capture the value found in the lambda
+        _logger.LogDebug("Attempting to retrieve key '{Key}' from DirectionalTierCache.", key);
         TValue foundValue = default!;
-        
-        // ExecuteOnTiers returns true as soon as any tier returns true
         bool found = ExecuteOnTiers(tier =>
         {
-            if (tier.TryGet(key, out var tempValue))
+            if (tier.TryGet(key, out TValue tempValue))
             {
                 foundValue = tempValue;
                 return true;
             }
             return false;
         });
-        
-        // now assign to the out parameter
+
         value = foundValue;
+        if (found)
+            _logger.LogDebug("Key '{Key}' found in DirectionalTierCache.", key);
+        else
+            _logger.LogDebug("Key '{Key}' not found in DirectionalTierCache.", key);
+
         return found;
     }
 
@@ -166,11 +171,107 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// </summary>
     public void Set(TKey key, TValue value)
     {
+        _logger.LogDebug("Setting key '{Key}' in DirectionalTierCache.", key);
         ExecuteOnTiers(tier =>
         {
-            tier.Set(key, value);
-            return true; // Signal success to stop iteration
+            try
+            {
+                tier.Set(key, value);
+                _logger.LogDebug("Key '{Key}' set in a tier.", key);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting key '{Key}' in a tier.", key);
+                return false;
+            }
         });
+    }
+
+    /// <summary>
+    /// Attempts to remove from all tiers that are available (or do not implement availability).
+    /// Returns true if any tier's Remove(key) returned true.
+    /// </summary>
+    public bool Remove(TKey key)
+    {
+        _logger.LogDebug("Removing key '{Key}' from DirectionalTierCache.", key);
+        bool removedAny = false;
+        foreach (ICache<TKey, TValue> tier in _tiers)
+        {
+            if (tier is ICacheAvailability avail && !avail.IsAvailable())
+            {
+                _logger.LogWarning("Tier is unavailable for removing key '{Key}'.", key);
+                continue;
+            }
+
+            try
+            {
+                removedAny |= tier.Remove(key);
+                _logger.LogDebug("Key '{Key}' removed from a tier.", key);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error removing key '{Key}' from a tier.", key);
+            }
+        }
+
+        if (removedAny)
+            _logger.LogInformation("Key '{Key}' successfully removed from one or more tiers.", key);
+        else
+            _logger.LogWarning("Key '{Key}' not found in any tier for removal.", key);
+
+        return removedAny;
+    }
+
+    /// <summary>
+    /// Clears all tiers that are currently available.
+    /// </summary>
+    public void Clear()
+    {
+        _logger.LogWarning("Clearing all tiers in DirectionalTierCache.");
+        foreach (ICache<TKey, TValue> tier in _tiers)
+        {
+            if (tier is ICacheAvailability avail && !avail.IsAvailable())
+            {
+                _logger.LogWarning("Tier is unavailable for clearing.");
+                continue;
+            }
+
+            try
+            {
+                tier.Clear();
+                _logger.LogInformation("Tier cleared successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error clearing a tier.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Evaluates and migrates entries across all tiers of the cache based on the defined migration strategy
+    /// and specified cache direction.
+    /// </summary>
+    /// <remarks>
+    /// The method iterates through each cache tier, identifying valid neighboring tiers for migration
+    /// and moving entries accordingly. It respects the configured migration strategy and cache direction,
+    /// enabling dynamic promotion or demotion of entries between tiers. This process ensures that cache entries
+    /// are optimally allocated across different tiers to maintain performance and accessibility.
+    /// </remarks>
+    private void CheckAndMigrateAll()
+    {
+        _logger.LogDebug("Starting migration across all tiers in DirectionalTierCache.");
+        int count = _tiers.Length;
+        if (count < 2) return;
+
+        MigrationParameters migrationParams = CalculateMigrationParameters(count);
+
+        for (int i = migrationParams.Start; ShouldContinueIteration(i, migrationParams); i += migrationParams.Step)
+        {
+            int targetIndex = i + migrationParams.NeighborOffset;
+            MigrateBetweenTiers(i, targetIndex);
+        }
     }
 
     /// <summary>
@@ -185,25 +286,32 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     private bool ExecuteOnTiers(Func<ICache<TKey, TValue>, bool> operation)
     {
         int count = _tiers.Length;
-        var indices = GetTierIndices(count);
+        IEnumerable<int> indices = GetTierIndices(count);
 
         foreach (int i in indices)
         {
-            var tier = _tiers[i];
+            ICache<TKey, TValue> tier = _tiers[i];
             if (tier is ICacheAvailability a && !a.IsAvailable())
+            {
+                _logger.LogWarning("Tier {TierIndex} is unavailable.", i);
                 continue;
+            }
 
             try
             {
                 if (operation(tier))
+                {
+                    _logger.LogDebug("Operation succeeded on tier {TierIndex}.", i);
                     return true;
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // skip failing tier
+                _logger.LogError(ex, "Error executing operation on tier {TierIndex}.", i);
             }
         }
 
+        _logger.LogDebug("Operation failed on all tiers.");
         return false;
     }
 
@@ -227,75 +335,6 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     }
 
     /// <summary>
-    /// Attempts to remove from all tiers that are available (or do not implement availability).
-    /// Returns true if any tier’s Remove(key) returned true.
-    /// </summary>
-    public bool Remove(TKey key)
-    {
-        bool removedAny = false;
-        foreach (var tier in _tiers)
-        {
-            if (tier is ICacheAvailability a && !a.IsAvailable())
-                continue;
-
-            try
-            {
-                removedAny |= tier.Remove(key);
-            }
-            catch
-            {
-                // swallow and continue
-            }
-        }
-        return removedAny;
-    }
-
-    /// <summary>
-    /// Clears all tiers that are currently available.
-    /// </summary>
-    public void Clear()
-    {
-        foreach (var tier in _tiers)
-        {
-            if (tier is ICacheAvailability a && !a.IsAvailable())
-                continue;
-
-            try
-            {
-                tier.Clear();
-            }
-            catch
-            {
-                // swallow and continue
-            }
-        }
-    }
-
-    /// <summary>
-    /// Evaluates and migrates entries across all tiers of the cache based on the defined migration strategy
-    /// and specified cache direction.
-    /// </summary>
-    /// <remarks>
-    /// The method iterates through each cache tier, identifying valid neighboring tiers for migration
-    /// and moving entries accordingly. It respects the configured migration strategy and cache direction,
-    /// enabling dynamic promotion or demotion of entries between tiers. This process ensures that cache entries
-    /// are optimally allocated across different tiers to maintain performance and accessibility.
-    /// </remarks>
-    private void CheckAndMigrateAll()
-    {
-        int count = _tiers.Length;
-        if (count < 2) return;
-
-        var migrationParams = CalculateMigrationParameters(count);
-
-        for (int i = migrationParams.Start; ShouldContinueIteration(i, migrationParams); i += migrationParams.Step)
-        {
-            int targetIndex = i + migrationParams.NeighborOffset;
-            MigrateBetweenTiers(i, targetIndex);
-        }
-    }
-
-    /// <summary>
     /// Calculates migration parameters for traversing cache tiers during the migration process.
     /// </summary>
     /// <param name="tierCount">
@@ -311,7 +350,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         bool lowToHigh = (_cacheDirection == CacheDirection.LowToHigh);
 
         int neighborOffset = CalculateNeighborOffset(promote, lowToHigh);
-        var (start, end, step) = CalculateIterationBounds(neighborOffset, tierCount);
+        (int start, int end, int step) = CalculateIterationBounds(neighborOffset, tierCount);
 
         return new MigrationParameters(start, end, step, neighborOffset);
     }
@@ -405,16 +444,16 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// </remarks>
     private void MigrateBetweenTiers(int sourceIndex, int targetIndex)
     {
-        var sourceTier = _tiers[sourceIndex];
-        var targetTier = _tiers[targetIndex];
+        ICache<TKey, TValue> sourceTier = _tiers[sourceIndex];
+        ICache<TKey, TValue> targetTier = _tiers[targetIndex];
 
         if (!CanMigrateBetweenTiers(sourceTier, targetTier))
             return;
 
-        var keys = GetKeysFromSource(sourceTier);
+        IEnumerable<TKey>? keys = GetKeysFromSource(sourceTier);
         if (keys == null) return;
 
-        foreach (var key in keys)
+        foreach (TKey key in keys)
         {
             if (!ShouldMigrateKey(key, targetTier))
                 continue;
@@ -502,7 +541,6 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         }
     }
 
-    
     /// <summary>
     /// Attempts to migrate a specific key-value pair from the source cache tier to the target cache tier.
     /// </summary>
@@ -535,7 +573,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
             return false; // Abort migration on any failure
         }
     }
-    
+
     private readonly record struct MigrationParameters(int Start, int End, int Step, int NeighborOffset);
 
     /// <summary>
@@ -601,7 +639,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     {
         // If any of the underlying cache tiers hold unmanaged resources
         // and implement IDisposable, release them here.
-        foreach (var tier in _tiers)
+        foreach (ICache<TKey, TValue> tier in _tiers)
         {
             if (tier is IDisposable disposable)
             {

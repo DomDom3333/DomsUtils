@@ -82,7 +82,7 @@ public static class BiMapExtensions
                 if (conflictResolver != null && conflictResolver(kvp.Key, kvp.Value))
                 {
                     // Find the key for the existing value
-                    var existingKey = biMap[kvp.Value];
+                    TKey existingKey = biMap[kvp.Value];
                     // Remove the existing key-value pair
                     biMap.RemoveByKey(existingKey);
                     // Now add the new key-value pair
@@ -192,7 +192,7 @@ public static class BiMapExtensions
                 if (conflictResolver != null && conflictResolver(key, value))
                 {
                     // Find the key for the existing value
-                    var existingKey = biMap[value];
+                    TKey existingKey = biMap[value];
                     // Remove the existing key-value pair
                     biMap.RemoveByKey(existingKey);
                     // Now add the new key-value pair

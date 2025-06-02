@@ -1,6 +1,8 @@
 ﻿using DomsUtils.Services.Caching.Addons.MigrationRules;
 using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DomsUtils.Services.Caching.Hybrids;
 
@@ -41,6 +43,11 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     private readonly Timer _timer;
 
     /// <summary>
+    /// Logger instance for recording diagnostic information, warnings, and errors.
+    /// </summary>
+    private readonly ILogger _logger;
+
+    /// <summary>
     /// Represents a tiered cache system composed of multiple cache levels with migration functionality.
     /// </summary>
     /// <typeparam name="TKey">The type of the key used to identify cache entries.</typeparam>
@@ -52,6 +59,9 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
 
         _caches = new List<ICache<TKey, TValue>>(caches);
         _migrationRuleSet = migrationRuleSet;
+        _logger = NullLogger.Instance;
+
+        _logger.LogInformation("TieredCache initialized with {CacheCount} caches.", _caches.Count);
 
         // Subscribe to OnSet events for event-based triggers
         for (int i = 0; i < _caches.Count; i++)
@@ -66,8 +76,9 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
         // If a periodic interval is set, start a timer
         if (_migrationRuleSet?.PeriodicCheckInterval != null)
         {
-            var interval = _migrationRuleSet.PeriodicCheckInterval.Value;
+            TimeSpan interval = _migrationRuleSet.PeriodicCheckInterval.Value;
             _timer = new Timer(_ => CheckAndMigrateAll(), null, interval, interval);
+            _logger.LogInformation("Periodic migration timer started with interval {Interval}.", interval);
         }
     }
 
@@ -80,27 +91,33 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// <returns>True if the key was found in any cache; otherwise, false.</returns>
     public bool TryGet(TKey key, out TValue value)
     {
+        _logger.LogDebug("Attempting to retrieve key '{Key}' from TieredCache.", key);
         for (int i = 0; i < _caches.Count; i++)
         {
-            var cache = _caches[i];
+            ICache<TKey, TValue> cache = _caches[i];
             if (cache is ICacheAvailability avail && !avail.IsAvailable())
+            {
+                _logger.LogWarning("Cache tier {TierIndex} is unavailable.", i);
                 continue;
+            }
 
             try
             {
                 if (cache.TryGet(key, out value))
                 {
+                    _logger.LogDebug("Key '{Key}' found in tier {TierIndex}. Promoting.", key, i);
                     Promote(key, value, i);
                     return true;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip failing tier
+                _logger.LogError(ex, "Error retrieving key '{Key}' from tier {TierIndex}.", key, i);
             }
         }
 
         value = default;
+        _logger.LogDebug("Key '{Key}' not found in any tier.", key);
         return false;
     }
 
@@ -112,17 +129,24 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// <param name="value">The value to associate with the key in the caches.</param>
     public void Set(TKey key, TValue value)
     {
+        _logger.LogDebug("Setting key '{Key}' in all tiers.", key);
         for (int i = 0; i < _caches.Count; i++)
         {
-            var cache = _caches[i];
+            ICache<TKey, TValue> cache = _caches[i];
             if (cache is ICacheAvailability avail && !avail.IsAvailable())
+            {
+                _logger.LogWarning("Cache tier {TierIndex} is unavailable for setting key '{Key}'.", i, key);
                 continue;
+            }
+
             try
             {
                 cache.Set(key, value);
+                _logger.LogDebug("Key '{Key}' set in tier {TierIndex}.", key, i);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error setting key '{Key}' in tier {TierIndex}.", key, i);
             }
         }
     }
@@ -136,19 +160,31 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// </returns>
     public bool Remove(TKey key)
     {
+        _logger.LogDebug("Removing key '{Key}' from all tiers.", key);
         bool removed = false;
-        foreach (var cache in _caches)
+        foreach (ICache<TKey, TValue> cache in _caches)
         {
             if (cache is ICacheAvailability avail && !avail.IsAvailable())
+            {
+                _logger.LogWarning("Cache tier is unavailable for removing key '{Key}'.", key);
                 continue;
+            }
+
             try
             {
                 removed |= cache.Remove(key);
+                _logger.LogDebug("Key '{Key}' removed from a tier.", key);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error removing key '{Key}' from a tier.", key);
             }
         }
+
+        if (removed)
+            _logger.LogInformation("Key '{Key}' successfully removed from one or more tiers.", key);
+        else
+            _logger.LogWarning("Key '{Key}' not found in any tier for removal.", key);
 
         return removed;
     }
@@ -159,16 +195,23 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// </summary>
     public void Clear()
     {
-        foreach (var cache in _caches)
+        _logger.LogWarning("Clearing all tiers in TieredCache.");
+        foreach (ICache<TKey, TValue> cache in _caches)
         {
             if (cache is ICacheAvailability avail && !avail.IsAvailable())
+            {
+                _logger.LogWarning("Cache tier is unavailable for clearing.");
                 continue;
+            }
+
             try
             {
                 cache.Clear();
+                _logger.LogInformation("Cache tier cleared successfully.");
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error clearing a cache tier.");
             }
         }
     }
@@ -193,7 +236,7 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
         {
             if (_caches[i] is ICacheEnumerable<TKey> enumerable)
             {
-                foreach (var key in enumerable.Keys())
+                foreach (TKey key in enumerable.Keys())
                 {
                     TryGet(key, out _);
                 }
@@ -210,18 +253,19 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// <param name="tierIndex">The index of the cache tier where the event was triggered.</param>
     private void HandleEventTriggeredMigration(TKey key, TValue value, int tierIndex)
     {
+        _logger.LogDebug("Handling event-triggered migration for key '{Key}' in tier {TierIndex}.", key, tierIndex);
         // When a new value is set in tierIndex, check rules for demotion or promotion
-        foreach (var rule in _migrationRuleSet?.GetRulesForTier(tierIndex) ??
-                             Enumerable.Empty<MigrationRule<TKey, TValue>>())
+        foreach (MigrationRule<TKey, TValue> rule in _migrationRuleSet?.GetRulesForTier(tierIndex) ??
+                                                     Enumerable.Empty<MigrationRule<TKey, TValue>>())
         {
-            var fromCache = _caches[tierIndex];
+            ICache<TKey, TValue> fromCache = _caches[tierIndex];
             int targetTier = rule.ToTier;
-            var toCache = targetTier >= 0 && targetTier < _caches.Count ? _caches[targetTier] : null;
+            ICache<TKey, TValue>? toCache = targetTier >= 0 && targetTier < _caches.Count ? _caches[targetTier] : null;
             if (rule.FromTier == tierIndex && rule.Condition(key, value, fromCache, toCache))
             {
                 if (targetTier >= 0 && targetTier < _caches.Count)
                 {
-                    var targetCache = _caches[targetTier];
+                    ICache<TKey, TValue> targetCache = _caches[targetTier];
                     if (targetCache is ICacheAvailability avail && !avail.IsAvailable())
                         continue;
                     try
@@ -247,9 +291,10 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// <param name="foundIndex">The index of the cache where the key-value pair was found.</param>
     private void Promote(TKey key, TValue value, int foundIndex)
     {
+        _logger.LogDebug("Promoting key '{Key}' from tier {FoundIndex}.", key, foundIndex);
         for (int j = 0; j < foundIndex; j++)
         {
-            var targetCache = _caches[j];
+            ICache<TKey, TValue> targetCache = _caches[j];
             if (targetCache is ICacheAvailability avail && !avail.IsAvailable())
                 continue;
             bool migrate = _migrationRuleSet == null || _migrationRuleSet.ShouldMigrate(key, value, foundIndex, j, _caches[j], targetCache);
@@ -271,6 +316,7 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// </summary>
     public void Dispose()
     {
+        _logger.LogInformation("Disposing TieredCache.");
         Dispose(true);
         GC.SuppressFinalize(this);
     }
@@ -295,7 +341,7 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
             _timer?.Dispose();
 
             // Dispose any IDisposable caches
-            foreach (var cache in _caches)
+            foreach (ICache<TKey, TValue> cache in _caches)
             {
                 if (cache is IDisposable disposableCache)
                 {

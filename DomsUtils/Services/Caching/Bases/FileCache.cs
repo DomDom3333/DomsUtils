@@ -1,6 +1,8 @@
 using System.Text.Json;
 using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DomsUtils.Services.Caching.Bases;
 
@@ -48,6 +50,11 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// Path to the metadata file that stores the key-to-file mapping
     /// </summary>
     private readonly string _metadataFilePath;
+    
+    /// <summary>
+    /// Logger for the FileCache operations
+    /// </summary>
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Represents a serializable key-filename mapping entry
@@ -59,11 +66,19 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// with the specified directory path for file storage.
     /// </summary>
     /// <param name="directoryPath">The directory path where cache files will be stored.</param>
-    public FileCache(string directoryPath)
+    /// <param name="logger">Optional logger for logging cache operations.</param>
+    public FileCache(string directoryPath, ILogger? logger = null)
     {
         _directoryPath = directoryPath;
+        _logger = logger ?? NullLogger.Instance;
+        
+        _logger.LogInformation("Initializing FileCache with directory '{DirectoryPath}'", directoryPath);
+        
         if (!Directory.Exists(_directoryPath))
+        {
+            _logger.LogDebug("Creating directory '{DirectoryPath}' for FileCache", _directoryPath);
             Directory.CreateDirectory(_directoryPath);
+        }
             
         _metadataFilePath = Path.Combine(_directoryPath, "_keymapping.json");
         
@@ -79,19 +94,25 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
         using (_lock.EnterScope())
         {
             if (!File.Exists(_metadataFilePath))
+            {
+                _logger.LogDebug("Key mapping file not found at '{MetadataFilePath}'", _metadataFilePath);
                 return;
+            }
 
             try
             {
-                var mappings = LoadMappingsFromFile();
+                _logger.LogDebug("Loading key mappings from '{MetadataFilePath}'", _metadataFilePath);
+                List<KeyMappingEntry>? mappings = LoadMappingsFromFile();
                 if (mappings != null)
                 {
                     _keyToFileMap.Clear();
                     ProcessMappings(mappings);
+                    _logger.LogInformation("Successfully loaded {Count} key mappings", _keyToFileMap.Count);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error loading key mappings from '{MetadataFilePath}'", _metadataFilePath);
                 // If there's an error loading the mappings, start with an empty map
                 _keyToFileMap.Clear();
             }
@@ -104,7 +125,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// <returns>The deserialized mappings, or null if deserialization fails.</returns>
     private List<KeyMappingEntry>? LoadMappingsFromFile()
     {
-        var json = File.ReadAllText(_metadataFilePath);
+        string json = File.ReadAllText(_metadataFilePath);
         return JsonSerializer.Deserialize<List<KeyMappingEntry>>(json);
     }
 
@@ -114,15 +135,21 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// <param name="mappings">The mappings to process.</param>
     private void ProcessMappings(List<KeyMappingEntry> mappings)
     {
-        foreach (var mapping in mappings)
+        foreach (KeyMappingEntry mapping in mappings)
         {
             if (IsValidMapping(mapping))
             {
-                var key = TryDeserializeKey(mapping.SerializedKey);
+                TKey? key = TryDeserializeKey(mapping.SerializedKey);
                 if (key is not null)
                 {
                     _keyToFileMap[key] = mapping.Filename;
+                    _logger.LogDebug("Added mapping for file '{Filename}'", mapping.Filename);
                 }
+            }
+            else
+            {
+                _logger.LogWarning("Invalid mapping for file '{Filename}' with key type '{KeyTypeName}'", 
+                    mapping.Filename, mapping.KeyTypeName);
             }
         }
     }
@@ -134,7 +161,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// <returns>True if the mapping is valid, false otherwise.</returns>
     private bool IsValidMapping(KeyMappingEntry mapping)
     {
-        var filePath = Path.Combine(_directoryPath, mapping.Filename);
+        string filePath = Path.Combine(_directoryPath, mapping.Filename);
         return File.Exists(filePath) && mapping.KeyTypeName == typeof(TKey).FullName;
     }
 
@@ -147,7 +174,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     {
         try
         {
-            var key = JsonSerializer.Deserialize<TKey>(serializedKey);
+            TKey? key = JsonSerializer.Deserialize<TKey>(serializedKey);
             return !Equals(key, default!) ? key : default;
         }
         catch
@@ -165,31 +192,34 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
         {
             try
             {
+                _logger.LogDebug("Saving key mappings to '{MetadataFilePath}'", _metadataFilePath);
                 // Create a serializable version of the mapping
-                var serializableMap = new List<KeyMappingEntry>();
+                List<KeyMappingEntry> serializableMap = new List<KeyMappingEntry>();
                 
-                foreach (var kvp in _keyToFileMap)
+                foreach (KeyValuePair<TKey, string> kvp in _keyToFileMap)
                 {
                     try
                     {
                         // Serialize the key as JSON to preserve its structure
-                        var serializedKey = JsonSerializer.Serialize(kvp.Key);
-                        var keyTypeName = typeof(TKey).FullName ?? throw new InvalidOperationException("Key type name cannot be null");
+                        string serializedKey = JsonSerializer.Serialize(kvp.Key);
+                        string keyTypeName = typeof(TKey).FullName ?? throw new InvalidOperationException("Key type name cannot be null");
                         
                         serializableMap.Add(new KeyMappingEntry(serializedKey, kvp.Value, keyTypeName));
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        _logger.LogWarning(ex, "Failed to serialize key for filename '{Filename}'", kvp.Value);
                         // Skip keys that can't be serialized
                     }
                 }
                 
-                var json = JsonSerializer.Serialize(serializableMap);
+                string json = JsonSerializer.Serialize(serializableMap);
                 File.WriteAllText(_metadataFilePath, json);
+                _logger.LogInformation("Successfully saved {Count} key mappings", serializableMap.Count);
             }
-            catch
+            catch (Exception ex)
             {
-                // Log the error if needed
+                _logger.LogError(ex, "Error saving key mappings to '{MetadataFilePath}'", _metadataFilePath);
             }
         }
     }
@@ -206,12 +236,16 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
         using (_lock.EnterScope())
         {
             // If we already have a mapping for this key, return it
-            if (_keyToFileMap.TryGetValue(key, out var existingFilename))
+            if (_keyToFileMap.TryGetValue(key, out string? existingFilename))
+            {
+                _logger.LogDebug("Using existing filename '{Filename}' for key", existingFilename);
                 return existingFilename;
+            }
             
             // Otherwise, create a new unique filename
             string filename = Guid.NewGuid().ToString("N") + ".json";
             _keyToFileMap[key] = filename;
+            _logger.LogDebug("Created new filename '{Filename}' for key", filename);
             
             // Save the updated mapping
             SaveKeyMappings();
@@ -239,32 +273,39 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
 
         try
         {
+            _logger.LogDebug("Attempting to get value for key from file cache");
             using (_lock.EnterScope())
             {
                 // Check if we have a filename for this key
-                if (!_keyToFileMap.TryGetValue(key, out var filename))
+                if (!_keyToFileMap.TryGetValue(key, out string? filename))
+                {
+                    _logger.LogDebug("No filename found for key in file cache");
                     return false;
+                }
                 
-                var filePath = Path.Combine(_directoryPath, filename);
+                string filePath = Path.Combine(_directoryPath, filename);
+                _logger.LogDebug("Looking for cached file at '{FilePath}'", filePath);
                 
                 if (File.Exists(filePath))
                 {
-                    var json = File.ReadAllText(filePath);
+                    string json = File.ReadAllText(filePath);
                     value = JsonSerializer.Deserialize<TValue>(json) ?? throw new InvalidOperationException();
+                    _logger.LogDebug("Successfully retrieved value from file '{FilePath}'", filePath);
                     return true;
                 }
                 else
                 {
                     // File was deleted outside of our control
+                    _logger.LogWarning("Cache file '{FilePath}' was not found", filePath);
                     _keyToFileMap.Remove(key);
                     SaveKeyMappings();
                     return false;
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Log exception if needed
+            _logger.LogError(ex, "Error retrieving value for key from file cache");
             return false;
         }
     }
@@ -283,17 +324,21 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
         {
             try
             {
+                _logger.LogDebug("Setting value for key in file cache");
+                
                 // Get or create a filename for this key
-                var filename = GetOrCreateFilename(key);
-                var filePath = Path.Combine(_directoryPath, filename);
+                string filename = GetOrCreateFilename(key);
+                string filePath = Path.Combine(_directoryPath, filename);
                 
                 // Serialize and save the value
-                var json = JsonSerializer.Serialize(value);
+                string json = JsonSerializer.Serialize(value);
                 File.WriteAllText(filePath, json);
+                
+                _logger.LogInformation("Successfully saved value to file '{FilePath}'", filePath);
             }
-            catch
+            catch (Exception ex)
             {
-                // Log exception if needed
+                _logger.LogError(ex, "Error setting value for key in file cache");
             }
         }
     }
@@ -310,13 +355,19 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     {
         try
         {
+            _logger.LogDebug("Attempting to remove value for key from file cache");
+            
             using (_lock.EnterScope())
             {
                 // Check if we have a filename for this key
-                if (!_keyToFileMap.TryGetValue(key, out var filename))
+                if (!_keyToFileMap.TryGetValue(key, out string? filename))
+                {
+                    _logger.LogDebug("No filename found for key to remove");
                     return false;
+                }
                 
-                var filePath = Path.Combine(_directoryPath, filename);
+                string filePath = Path.Combine(_directoryPath, filename);
+                _logger.LogDebug("Removing cached file at '{FilePath}'", filePath);
                 
                 // Remove the file if it exists
                 bool fileRemoved = false;
@@ -324,6 +375,11 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
                 {
                     File.Delete(filePath);
                     fileRemoved = true;
+                    _logger.LogInformation("Successfully deleted file '{FilePath}'", filePath);
+                }
+                else
+                {
+                    _logger.LogWarning("File '{FilePath}' not found for deletion", filePath);
                 }
                 
                 // Remove from our mapping
@@ -333,9 +389,9 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
                 return fileRemoved;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Log exception if needed
+            _logger.LogError(ex, "Error removing value for key from file cache");
             return false;
         }
     }
@@ -354,23 +410,39 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     {
         try
         {
+            _logger.LogWarning("Clearing all files from cache directory '{DirectoryPath}'", _directoryPath);
+            
             using (_lock.EnterScope())
             {
                 // Delete all cache files except the metadata file
-                var files = Directory.GetFiles(_directoryPath)
+                IEnumerable<string> files = Directory.GetFiles(_directoryPath)
                     .Where(f => Path.GetFileName(f) != Path.GetFileName(_metadataFilePath));
                 
-                foreach (var file in files)
-                    File.Delete(file);
+                int count = 0;
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        File.Delete(file);
+                        count++;
+                        _logger.LogDebug("Deleted cache file '{FilePath}'", file);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete cache file '{FilePath}'", file);
+                    }
+                }
                 
                 // Clear the key mapping
                 _keyToFileMap.Clear();
                 SaveKeyMappings();
+                
+                _logger.LogInformation("Successfully cleared {Count} files from cache directory", count);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Log exception if needed
+            _logger.LogError(ex, "Error clearing files from cache directory '{DirectoryPath}'", _directoryPath);
         }
     }
 
@@ -380,12 +452,17 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// <returns>
     /// An enumerable collection of keys available in the cache.
     /// </returns>
-    public IEnumerable<TKey> Keys()
+    public override IEnumerable<TKey> Keys()
     {
+        _logger.LogDebug("Retrieving all keys from file cache");
+        
         using (_lock.EnterScope())
         {
             // Return a copy of the keys to avoid modification issues
-            return _keyToFileMap.Keys.ToList();
+            int count = _keyToFileMap.Keys.Count;
+            var keys = _keyToFileMap.Keys.ToList();
+            _logger.LogDebug("Retrieved {Count} keys from file cache", count);
+            return keys;
         }
     }
 
@@ -400,24 +477,32 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     {
         try
         {
+            _logger.LogDebug("Checking availability of file cache directory '{DirectoryPath}'", _directoryPath);
+            
             // Check if the directory exists and is accessible
             if (!Directory.Exists(_directoryPath))
+            {
+                _logger.LogWarning("Cache directory '{DirectoryPath}' does not exist", _directoryPath);
                 return false;
+            }
 
             // Attempt to create a uniquely named temporary file to avoid deleting any existing file
             string testFileName = Guid.NewGuid().ToString("N") + ".tmp";
             string testFilePath = Path.Combine(_directoryPath, testFileName);
+            _logger.LogDebug("Creating test file '{TestFilePath}' to verify cache availability", testFilePath);
 
             // Write to the test file
             File.WriteAllText(testFilePath, "availability check");
 
             // Delete the test file
             File.Delete(testFilePath);
-
+            
+            _logger.LogDebug("File cache is available at '{DirectoryPath}'", _directoryPath);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "File cache at '{DirectoryPath}' is not available", _directoryPath);
             return false;
         }
     }

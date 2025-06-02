@@ -4,6 +4,8 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DomsUtils.Services.Caching.Bases;
 
@@ -45,6 +47,11 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     private readonly Func<TKey, string> _keyConverter;
 
     /// <summary>
+    /// Logger instance for logging cache operations.
+    /// </summary>
+    private readonly ILogger _logger;
+
+    /// <summary>
     /// Event triggered after a value has been successfully added or updated in the S3 cache.
     /// </summary>
     public event Action<TKey, TValue> OnSet = delegate { };
@@ -58,7 +65,8 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         string bucketName,
         IAmazonS3 s3Client,
         JsonSerializerOptions? serializerOptions = null,
-        Func<TKey, string>? keyConverter = null)
+        Func<TKey, string>? keyConverter = null,
+        ILogger? logger = null)
     {
         BucketName = !string.IsNullOrWhiteSpace(bucketName)
             ? bucketName
@@ -73,6 +81,10 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         
         _keyConverter = keyConverter ?? (key => key.ToString() 
             ?? throw new InvalidOperationException($"Key {key} converted to null string"));
+            
+        _logger = logger ?? NullLogger.Instance;
+        
+        _logger.LogInformation("Initialized S3Cache with bucket '{BucketName}'", bucketName);
     }
 
     /// <summary>
@@ -93,6 +105,16 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// <returns>A new instance of S3Cache with the specified key converter.</returns>
     public static S3Cache<TKey, TValue> Create(string bucketName, IAmazonS3 s3Client, Func<TKey, string> keyConverter)
         => new(bucketName, s3Client, keyConverter: keyConverter);
+        
+    /// <summary>
+    /// Creates a new S3Cache instance with a logger.
+    /// </summary>
+    /// <param name="bucketName">The name of the S3 bucket.</param>
+    /// <param name="s3Client">A configured Amazon S3 client instance.</param>
+    /// <param name="logger">Logger instance for logging cache operations.</param>
+    /// <returns>A new instance of S3Cache with the specified logger.</returns>
+    public static S3Cache<TKey, TValue> Create(string bucketName, IAmazonS3 s3Client, ILogger logger)
+        => new(bucketName, s3Client, logger: logger);
 
     /// <summary>
     /// Converts a provided key to a specific format or type.
@@ -103,10 +125,14 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     {
         ArgumentNullException.ThrowIfNull(key);
         
-        var keyString = _keyConverter(key);
-        return !string.IsNullOrEmpty(keyString) 
-            ? keyString 
-            : throw new ArgumentException("Key converted to empty string", nameof(key));
+        string keyString = _keyConverter(key);
+        if (string.IsNullOrEmpty(keyString))
+        {
+            _logger.LogWarning("Key {Key} converted to empty string", key);
+            throw new ArgumentException("Key converted to empty string", nameof(key));
+        }
+        
+        return keyString;
     }
 
     /// <summary>
@@ -121,21 +147,26 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
 
         try
         {
-            var keyString = ConvertKey(key);
-            var response = S3Client.GetObjectAsync(BucketName, keyString).Result;
+            string keyString = ConvertKey(key);
+            _logger.LogDebug("Attempting to get value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
+            
+            GetObjectResponse? response = S3Client.GetObjectAsync(BucketName, keyString).Result;
 
             using (response.ResponseStream)
             {
                 value = JsonSerializer.Deserialize<TValue>(response.ResponseStream, _serializerOptions)!;
+                _logger.LogDebug("Successfully retrieved value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
                 return true;
             }
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
+            _logger.LogDebug("Key '{Key}' not found in S3 bucket '{BucketName}'", key, BucketName);
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error retrieving value for key '{Key}' from S3 bucket '{BucketName}'", key, BucketName);
             return false;
         }
     }
@@ -151,12 +182,14 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
 
         try
         {
-            var keyString = ConvertKey(key);
-            var json = JsonSerializer.Serialize(value, _serializerOptions);
-            var bytes = Encoding.UTF8.GetBytes(json);
+            string keyString = ConvertKey(key);
+            _logger.LogDebug("Setting value for key '{Key}' in S3 bucket '{BucketName}'", keyString, BucketName);
+            
+            string json = JsonSerializer.Serialize(value, _serializerOptions);
+            byte[] bytes = Encoding.UTF8.GetBytes(json);
 
-            using var stream = new MemoryStream(bytes);
-            var request = new PutObjectRequest
+            using MemoryStream stream = new MemoryStream(bytes);
+            PutObjectRequest request = new PutObjectRequest
             {
                 BucketName = BucketName,
                 Key = keyString,
@@ -165,11 +198,13 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
             };
 
             S3Client.PutObjectAsync(request).Wait();
+            _logger.LogInformation("Successfully set value for key '{Key}' in S3 bucket '{BucketName}'", keyString, BucketName);
             OnSet(key, value);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            _logger.LogError(ex, "Error setting value for key '{Key}' in S3 bucket '{BucketName}'", key, BucketName);
+            // ignored for backward compatibility
         }
     }
 
@@ -185,16 +220,21 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     {
         try
         {
-            var keyString = ConvertKey(key);
+            string keyString = ConvertKey(key);
+            _logger.LogDebug("Removing value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
+            
             S3Client.DeleteObjectAsync(BucketName, keyString).Wait();
+            _logger.LogInformation("Successfully removed value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
             return true;
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
+            _logger.LogDebug("Key '{Key}' not found for removal in S3 bucket '{BucketName}'", key, BucketName);
             return false;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error removing value for key '{Key}' from S3 bucket '{BucketName}'", key, BucketName);
             return false;
         }
     }
@@ -209,26 +249,40 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// </remarks>
     protected override void ClearInternal()
     {
-        var request = new ListObjectsV2Request { BucketName = BucketName, MaxKeys = 1000 };
+        _logger.LogWarning("Clearing all objects from S3 bucket '{BucketName}'", BucketName);
         
-        do
-        {
-            var response = S3Client.ListObjectsV2Async(request).Result;
+        try {
+            ListObjectsV2Request request = new ListObjectsV2Request { BucketName = BucketName, MaxKeys = 1000 };
+            int totalDeleted = 0;
             
-            if (response.S3Objects.Count > 0)
+            do
             {
-                var deleteRequest = new DeleteObjectsRequest
+                ListObjectsV2Response? response = S3Client.ListObjectsV2Async(request).Result;
+                int batchCount = response.S3Objects.Count;
+                
+                if (batchCount > 0)
                 {
-                    BucketName = BucketName,
-                    Objects = response.S3Objects.Select(obj => new KeyVersion { Key = obj.Key }).ToList()
-                };
+                    DeleteObjectsRequest deleteRequest = new DeleteObjectsRequest
+                    {
+                        BucketName = BucketName,
+                        Objects = response.S3Objects.Select(obj => new KeyVersion { Key = obj.Key }).ToList()
+                    };
 
-                S3Client.DeleteObjectsAsync(deleteRequest).Wait();
+                    S3Client.DeleteObjectsAsync(deleteRequest).Wait();
+                    totalDeleted += batchCount;
+                    _logger.LogDebug("Deleted batch of {Count} objects from S3 bucket '{BucketName}'", batchCount, BucketName);
+                }
+
+                request.ContinuationToken = response.NextContinuationToken;
             }
-
-            request.ContinuationToken = response.NextContinuationToken;
+            while (request.ContinuationToken != null);
+            
+            _logger.LogInformation("Successfully cleared {Count} objects from S3 bucket '{BucketName}'", totalDeleted, BucketName);
         }
-        while (request.ContinuationToken != null);
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error clearing objects from S3 bucket '{BucketName}'", BucketName);
+        }
     }
 
     /// <summary>
@@ -239,11 +293,14 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     {
         try
         {
+            _logger.LogDebug("Checking availability of S3 bucket '{BucketName}'", BucketName);
             S3Client.GetBucketLocationAsync(BucketName).Wait();
+            _logger.LogDebug("S3 bucket '{BucketName}' is available", BucketName);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "S3 bucket '{BucketName}' is not available", BucketName);
             return false;
         }
     }
@@ -251,8 +308,9 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// <summary>
     /// Represents a collection of keys used within a system.
     /// </summary>
-    public IEnumerable<TKey> Keys()
+    public override IEnumerable<TKey> Keys()
     {
+        _logger.LogWarning("Key enumeration not supported in generic S3Cache<TKey, TValue>. Use string keys or implement custom mapping.");
         throw new NotSupportedException(
             "Key enumeration requires reverse key mapping. Use string keys or implement custom mapping.");
     }
@@ -270,8 +328,9 @@ public class S3Cache<TValue> : S3Cache<string, TValue>
     /// <param name="bucketName">The name of the Amazon S3 bucket used for caching.</param>
     /// <param name="s3Client">The Amazon S3 client configured for communication with the S3 service.</param>
     /// <param name="serializerOptions">Optional parameters for customizing JSON serialization behavior.</param>
-    public S3Cache(string bucketName, IAmazonS3 s3Client, JsonSerializerOptions? serializerOptions = null)
-        : base(bucketName, s3Client, serializerOptions)
+    /// <param name="logger">Optional logger for logging cache operations.</param>
+    public S3Cache(string bucketName, IAmazonS3 s3Client, JsonSerializerOptions? serializerOptions = null, ILogger? logger = null)
+        : base(bucketName, s3Client, serializerOptions, logger: logger)
     {
     }
 
@@ -283,19 +342,50 @@ public class S3Cache<TValue> : S3Cache<string, TValue>
     /// <returns>A new instance of S3Cache with the specified configuration.</returns>
     public new static S3Cache<TValue> Create(string bucketName, IAmazonS3 s3Client)
         => new(bucketName, s3Client);
+        
+    /// <summary>
+    /// Creates a new S3Cache instance with a logger.
+    /// </summary>
+    /// <param name="bucketName">The name of the S3 bucket.</param>
+    /// <param name="s3Client">A configured Amazon S3 client instance.</param>
+    /// <param name="logger">Logger instance for logging cache operations.</param>
+    /// <returns>A new instance of S3Cache with the specified logger.</returns>
+    public static S3Cache<TValue> Create(string bucketName, IAmazonS3 s3Client, ILogger logger)
+        => new(bucketName, s3Client, logger: logger);
 
     /// <summary>
-    /// Represents a collection of keys used for accessing specific resources or data.
+    /// Retrieves a collection of keys currently stored in the Amazon S3-backed cache.
     /// </summary>
+    /// <returns>
+    /// An enumerable of keys representing the stored items in the cache.
+    /// </returns>
     public new IEnumerable<string> Keys()
     {
-        var request = new ListObjectsV2Request { BucketName = BucketName, MaxKeys = 1000 };
+        try
+        {
+            return GetKeysInternal();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error enumerating keys in S3 bucket '{BucketName}'", ex);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves all keys stored in the Amazon S3 bucket associated with this cache.
+    /// </summary>
+    /// <returns>
+    /// A collection of strings representing the keys stored in the S3 bucket.
+    /// </returns>
+    private IEnumerable<string> GetKeysInternal()
+    {
+        ListObjectsV2Request request = new ListObjectsV2Request { BucketName = BucketName, MaxKeys = 1000 };
         
         do
         {
-            var response = S3Client.ListObjectsV2Async(request).Result;
+            ListObjectsV2Response? response = S3Client.ListObjectsV2Async(request).Result;
             
-            foreach (var obj in response.S3Objects)
+            foreach (S3Object? obj in response.S3Objects)
                 yield return obj.Key;
 
             request.ContinuationToken = response.NextContinuationToken;

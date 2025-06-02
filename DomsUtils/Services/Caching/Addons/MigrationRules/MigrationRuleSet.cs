@@ -67,7 +67,7 @@ public class MigrationRuleSet<TKey, TValue> : IMigrationRule<TKey, TValue>
     /// </returns>
     public bool ShouldMigrate(TKey key, TValue value, int fromTier, int toTier, ICache<TKey, TValue> fromCache, ICache<TKey, TValue> toCache)
     {
-        foreach (var rule in _rules)
+        foreach (MigrationRule<TKey, TValue> rule in _rules)
         {
             if (rule.ShouldMigrate(key, value, fromTier, toTier, fromCache, toCache))
                 return true;
