@@ -24,7 +24,7 @@
 <PropertyGroup>
   <!-- Identity -->
   <PackageId>DomsUtils</PackageId>
-  <Version>1.3.0</Version>
+  <Version>1.4.0</Version>
   <Authors>Dominik Esseenhofer</Authors>
   <Company>Doms Stuff</Company>
 
