@@ -52,14 +52,14 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// </summary>
     /// <typeparam name="TKey">The type of the key used to identify cache entries.</typeparam>
     /// <typeparam name="TValue">The type of the value stored in the cache.</typeparam>
-    public TieredCache(MigrationRuleSet<TKey, TValue> migrationRuleSet, params ICache<TKey, TValue>[] caches)
+    public TieredCache(MigrationRuleSet<TKey, TValue> migrationRuleSet, ILogger logger = default, params ICache<TKey, TValue>[] caches)
     {
         if (caches == null || caches.Length < 2)
             throw new ArgumentException("At least two caches are required.");
 
         _caches = new List<ICache<TKey, TValue>>(caches);
         _migrationRuleSet = migrationRuleSet;
-        _logger = NullLogger.Instance;
+        _logger = logger;
 
         _logger.LogInformation("TieredCache initialized with {CacheCount} caches.", _caches.Count);
 

@@ -24,13 +24,13 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailabil
     /// Hybrid cache that writes to all underlying caches in parallel, and reads from them in priority order.
     /// Implements ICache so it can be nested.
     /// </summary>
-    public ParallelCache(params ICache<TKey, TValue>[] caches)
+    public ParallelCache(ILogger logger = default, params ICache<TKey, TValue>[] caches)
     {
         if (caches == null || caches.Length < 2)
             throw new ArgumentException("At least two caches are required for a ParallelCache.");
 
         _caches = new List<ICache<TKey, TValue>>(caches);
-        _logger = NullLogger.Instance;
+        _logger = logger;
 
         _logger.LogInformation("ParallelCache initialized with {CacheCount} caches.", _caches.Count);
     }

@@ -47,6 +47,12 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     private readonly Func<TKey, string> _keyConverter;
 
     /// <summary>
+    /// A function delegate responsible for converting a string representation back to a key of type <typeparamref name="TKey"/>.
+    /// This is used to convert S3 object keys back to the original key type during enumeration.
+    /// </summary>
+    private readonly Func<string, TKey>? _reverseKeyConverter;
+
+    /// <summary>
     /// Logger instance for logging cache operations.
     /// </summary>
     private readonly ILogger _logger;
@@ -66,6 +72,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         IAmazonS3 s3Client,
         JsonSerializerOptions? serializerOptions = null,
         Func<TKey, string>? keyConverter = null,
+        Func<string, TKey>? reverseKeyConverter = null,
         ILogger? logger = null)
     {
         BucketName = !string.IsNullOrWhiteSpace(bucketName)
@@ -81,7 +88,9 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         
         _keyConverter = keyConverter ?? (key => key.ToString() 
             ?? throw new InvalidOperationException($"Key {key} converted to null string"));
-            
+        
+        _reverseKeyConverter = reverseKeyConverter;
+        
         _logger = logger ?? NullLogger.Instance;
         
         _logger.LogInformation("Initialized S3Cache with bucket '{BucketName}'", bucketName);
@@ -105,6 +114,18 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// <returns>A new instance of S3Cache with the specified key converter.</returns>
     public static S3Cache<TKey, TValue> Create(string bucketName, IAmazonS3 s3Client, Func<TKey, string> keyConverter)
         => new(bucketName, s3Client, keyConverter: keyConverter);
+
+    /// <summary>
+    /// Creates a new S3Cache instance with custom key converters.
+    /// </summary>
+    /// <param name="bucketName">The name of the S3 bucket.</param>
+    /// <param name="s3Client">A configured Amazon S3 client instance.</param>
+    /// <param name="keyConverter">A function to convert keys to string representations.</param>
+    /// <param name="reverseKeyConverter">A function to convert string representations back to keys.</param>
+    /// <returns>A new instance of S3Cache with the specified key converters.</returns>
+    public static S3Cache<TKey, TValue> Create(string bucketName, IAmazonS3 s3Client, 
+        Func<TKey, string> keyConverter, Func<string, TKey> reverseKeyConverter)
+        => new(bucketName, s3Client, keyConverter: keyConverter, reverseKeyConverter: reverseKeyConverter);
         
     /// <summary>
     /// Creates a new S3Cache instance with a logger.
@@ -310,9 +331,45 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// </summary>
     public override IEnumerable<TKey> Keys()
     {
-        _logger.LogWarning("Key enumeration not supported in generic S3Cache<TKey, TValue>. Use string keys or implement custom mapping.");
-        throw new NotSupportedException(
-            "Key enumeration requires reverse key mapping. Use string keys or implement custom mapping.");
+        if (_reverseKeyConverter == null)
+        {
+            _logger.LogWarning("Key enumeration not supported in generic S3Cache<TKey, TValue>. Use string keys or provide reverse key converter.");
+            throw new NotSupportedException(
+                "Key enumeration requires reverse key mapping. Use string keys or provide reverse key converter.");
+        }
+
+        try
+        {
+            return GetKeysInternal();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error enumerating keys in S3 bucket '{BucketName}'", ex);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves all keys stored in the Amazon S3 bucket associated with this cache.
+    /// </summary>
+    /// <returns>
+    /// A collection of keys representing the stored items in the S3 bucket.
+    /// </returns>
+    private IEnumerable<TKey> GetKeysInternal()
+    {
+        ListObjectsV2Request request = new ListObjectsV2Request { BucketName = BucketName, MaxKeys = 1000 };
+        
+        do
+        {
+            ListObjectsV2Response? response = S3Client.ListObjectsV2Async(request).Result;
+        
+            foreach (S3Object? obj in response.S3Objects)
+            {
+                yield return _reverseKeyConverter!(obj.Key);
+            }
+
+            request.ContinuationToken = response.NextContinuationToken;
+        }
+        while (request.ContinuationToken != null);
     }
 }
 
