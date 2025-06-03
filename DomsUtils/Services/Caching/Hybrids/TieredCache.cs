@@ -12,7 +12,7 @@ namespace DomsUtils.Services.Caching.Hybrids;
 /// </summary>
 /// <typeparam name="TKey">The type of cache entry key.</typeparam>
 /// <typeparam name="TValue">The type of cache entry value.</typeparam>
-public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
+public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratable, IDisposable
 {
     /// <summary>
     /// Represents the collection of caches used in the tiered caching system.
@@ -230,7 +230,7 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     /// and evaluates each key for migration based on the defined migration rules.
     /// Only applicable when the underlying caches implement the ICacheEnumerable interface.
     /// </summary>
-    public void CheckAndMigrateAll()
+    private void CheckAndMigrateAll()
     {
         for (int i = _caches.Count - 1; i >= 0; i--)
         {
@@ -361,5 +361,11 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, IDisposable
     ~TieredCache()
     {
         Dispose(false);
+    }
+
+    public void TriggerMigrationNow()
+    {
+        _logger.LogInformation("Manual migration trigger invoked for TieredCache.");
+        CheckAndMigrateAll();
     }
 }

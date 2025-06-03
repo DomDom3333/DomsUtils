@@ -215,6 +215,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
                 BucketName = BucketName,
                 Key = keyString,
                 InputStream = stream,
+                UseChunkEncoding = false,
                 ContentType = "application/json"
             };
 

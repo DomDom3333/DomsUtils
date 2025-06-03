@@ -60,7 +60,7 @@ public enum MigrationStrategy
 /// can represent a different kind of cache (e.g., in-memory, distributed) and the data can be migrated
 /// between tiers based on the provided migration direction and strategy.
 /// </remarks>
-public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability, IDisposable, IAsyncDisposable
+public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability, ICacheMigratable, IDisposable, IAsyncDisposable
 {
     private readonly ICache<TKey, TValue>[] _tiers;
     private readonly CacheDirection _cacheDirection;
@@ -710,5 +710,13 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         await DisposeAsyncCore();
         GC.SuppressFinalize(this);
     }
-}
 
+    /// <summary>
+    /// Triggers an immediate reevaluation and migration (promotion/demotion) of cache entries across all tiers.
+    /// </summary>
+    public void TriggerMigrationNow()
+    {
+        _logger.LogInformation("Manual migration trigger invoked.");
+        CheckAndMigrateAll();
+    }
+}
