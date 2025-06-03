@@ -180,7 +180,14 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
                 keyString, BucketName);
             return true;
         }
-        catch (Amazon.S3.AmazonS3Exception ex) when
+        catch (AggregateException ex) when (ex.InnerException is Amazon.S3.AmazonS3Exception s3Ex && 
+            (s3Ex.ErrorCode == "NoSuchKey" || s3Ex.Message.Contains("Key not found")))
+        {
+            // Expected behavior for missing keys - don't log as error
+            _logger.LogDebug("Key '{Key}' not found in S3 bucket '{BucketName}'", key, BucketName);
+            return false;
+        }
+        catch (Amazon.S3.AmazonS3Exception ex) when 
             (ex.ErrorCode == "NoSuchKey" || ex.Message.Contains("Key not found"))
         {
             // Expected behavior for missing keys - don't log as error
@@ -190,7 +197,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         catch (Exception ex)
         {
             // Unexpected errors should still be logged
-            _logger?.LogError(ex, "Unexpected error retrieving key '{Key}' from S3 bucket '{BucketName}'", key,
+            _logger.LogError(ex, "Unexpected error retrieving key '{Key}' from S3 bucket '{BucketName}'", key,
                 BucketName);
             return false;
         }

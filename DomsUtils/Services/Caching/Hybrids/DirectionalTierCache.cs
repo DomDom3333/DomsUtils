@@ -267,12 +267,76 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         int count = _tiers.Length;
         if (count < 2) return;
 
+        // Early optimization: Check if there are any keys to migrate before processing
+        if (!HasKeysToMigrate())
+        {
+            _logger.LogDebug("No keys found in source tiers, skipping migration.");
+            return;
+        }
+
         MigrationParameters migrationParams = CalculateMigrationParameters(count);
 
         for (int i = migrationParams.Start; ShouldContinueIteration(i, migrationParams); i += migrationParams.Step)
         {
             int targetIndex = i + migrationParams.NeighborOffset;
             MigrateBetweenTiers(i, targetIndex);
+        }
+    }
+
+    /// <summary>
+    /// Checks if there are any keys available for migration in the source tiers.
+    /// </summary>
+    /// <returns>
+    /// True if any source tier contains keys that could potentially be migrated; otherwise, false.
+    /// </returns>
+    private bool HasKeysToMigrate()
+    {
+        int count = _tiers.Length;
+        MigrationParameters migrationParams = CalculateMigrationParameters(count);
+
+        for (int i = migrationParams.Start; ShouldContinueIteration(i, migrationParams); i += migrationParams.Step)
+        {
+            int targetIndex = i + migrationParams.NeighborOffset;
+            
+            // Check if target index is valid
+            if (targetIndex < 0 || targetIndex >= count) continue;
+            
+            ICache<TKey, TValue> sourceTier = _tiers[i];
+            ICache<TKey, TValue> targetTier = _tiers[targetIndex];
+
+            if (!CanMigrateBetweenTiers(sourceTier, targetTier))
+                continue;
+
+            // Quick check if source tier has any keys
+            if (HasKeysInTier(sourceTier))
+            {
+                _logger.LogDebug("Found keys in source tier {SourceIndex}, migration will proceed.", i);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Performs a lightweight check to determine if a cache tier contains any keys.
+    /// </summary>
+    /// <param name="tier">The cache tier to check for keys.</param>
+    /// <returns>True if the tier contains keys; otherwise, false.</returns>
+    private bool HasKeysInTier(ICache<TKey, TValue> tier)
+    {
+        try
+        {
+            IEnumerable<TKey>? keys = GetKeysFromSource(tier);
+            if (keys == null) return false;
+
+            // Use Any() for efficient existence check without enumerating all keys
+            return keys.Any();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error checking if tier has keys, assuming no keys available.");
+            return false;
         }
     }
 
