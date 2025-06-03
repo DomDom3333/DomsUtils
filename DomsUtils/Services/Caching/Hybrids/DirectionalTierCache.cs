@@ -623,37 +623,63 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     }
 
     /// <summary>
-    /// Attempts to migrate a specific key-value pair from the source cache tier to the target cache tier.
+    /// Attempts to migrate a specified key and its associated value from a source cache tier to a target cache tier.
     /// </summary>
     /// <param name="key">
-    /// The key identifying the value to be migrated.
+    /// The key to be migrated.
     /// </param>
     /// <param name="sourceTier">
-    /// The source cache tier from which the key-value pair should be retrieved.
+    /// The cache tier from which the key and its associated value are to be migrated.
     /// </param>
     /// <param name="targetTier">
-    /// The target cache tier to which the key-value pair should be added.
+    /// The cache tier to which the key and its associated value are to be migrated.
     /// </param>
     /// <returns>
-    /// A boolean value indicating whether the migration operation was successful.
-    /// Returns true if the key-value pair is successfully migrated or does not exist in the source tier.
-    /// Returns false if the migration operation fails due to an exception.
+    /// Returns <c>true</c> if the migration is successful; otherwise, returns <c>false</c>.
     /// </returns>
+    /// <remarks>
+    /// This method ensures that the value associated with the specified key is successfully moved from the source tier
+    /// to the target tier. If the migration fails at any point, the method will return <c>false</c>.
+    /// </remarks>
     private bool TryMigrateKey(TKey key, ICache<TKey, TValue> sourceTier, ICache<TKey, TValue> targetTier)
     {
         try
         {
-            if (!sourceTier.TryGet(key, out TValue value))
-                return true; // Continue with other keys
+            // First, try to get the value from the source tier
+            if (!sourceTier.TryGet(key, out var value))
+            {
+                // Key doesn't exist in source, nothing to migrate
+                return false;
+            }
 
+            // Attempt to set the value in the target tier
             targetTier.Set(key, value);
-            _logger.LogDebug("Successfully migrated key '{Key}' between tiers", key);
-            return true;
+
+            // Verify the migration was successful by checking if the key exists in target
+            if (targetTier.TryGet(key, out _))
+            {
+                // Migration successful - now remove from source
+                bool removedFromSource = sourceTier.Remove(key);
+            
+                if (!removedFromSource)
+                {
+                    // Log warning but don't fail the migration since data is in target
+                    _logger?.LogWarning("Failed to remove key {Key} from source tier after successful migration", key);
+                }
+            
+                return true;
+            }
+            else
+            {
+                // Migration failed - value not found in target tier
+                _logger?.LogError("Migration verification failed for key {Key} - value not found in target tier", key);
+                return false;
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to migrate key '{Key}' between tiers, aborting migration", key);
-            return false; // Abort migration on any failure
+            _logger?.LogError(ex, "Failed to migrate key {Key} between tiers", key);
+            return false;
         }
     }
 
