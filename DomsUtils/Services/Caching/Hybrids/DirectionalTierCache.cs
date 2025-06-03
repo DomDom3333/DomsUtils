@@ -1,4 +1,5 @@
-﻿using DomsUtils.Services.Caching.Interfaces.Addons;
+﻿using DomsUtils.Services.Caching.Bases;
+using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -502,17 +503,29 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// <returns>
     /// A collection of keys if the tier supports key enumeration; otherwise, null.
     /// </returns>
-    private static IEnumerable<TKey>? GetKeysFromSource(ICache<TKey, TValue> sourceTier)
+    private IEnumerable<TKey>? GetKeysFromSource(ICache<TKey, TValue> sourceTier)
     {
-        if (sourceTier is not ICacheEnumerable<TKey> sourceEnum)
-            return null;
-
         try
         {
-            return sourceEnum.Keys();
+            // Check if this is the specialized S3Cache<TValue> (where TKey is string)
+            if (sourceTier is S3Cache<TValue> s3StringCache && typeof(TKey) == typeof(string))
+            {
+                // Use dynamic to call the overridden Keys() method on S3Cache<TValue>
+                dynamic dynamicCache = s3StringCache;
+                var keys = dynamicCache.Keys();
+                return keys as IEnumerable<TKey>;
+            }
+            // Check if source implements ICacheEnumerable<TKey>
+            else if (sourceTier is ICacheEnumerable<TKey> sourceEnum)
+            {
+                return sourceEnum.Keys();
+            }
+            
+            return null;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error retrieving keys from cache tier");
             return null; // If enumeration fails, skip this source tier
         }
     }
@@ -698,3 +711,4 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         GC.SuppressFinalize(this);
     }
 }
+

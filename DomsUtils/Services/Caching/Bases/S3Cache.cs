@@ -361,9 +361,18 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         do
         {
             ListObjectsV2Response? response = S3Client.ListObjectsV2Async(request).Result;
-        
+
+            if (response?.S3Objects is null)
+            {
+                _logger.LogWarning($"Response was null or S3Objects was null. Continuing with next page. Code: {response?.HttpStatusCode}");
+                continue;
+            }
+            
             foreach (S3Object? obj in response.S3Objects)
             {
+                if (obj.Key is null)
+                    continue;
+                
                 yield return _reverseKeyConverter!(obj.Key);
             }
 
