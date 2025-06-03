@@ -543,14 +543,17 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// A boolean value indicating whether the key should be migrated to the target tier.
     /// Returns true if the key does not already exist in the target tier; otherwise, false.
     /// </returns>
-    private static bool ShouldMigrateKey(TKey key, ICache<TKey, TValue> targetTier)
+    private bool ShouldMigrateKey(TKey key, ICache<TKey, TValue> targetTier)
     {
         try
         {
             return !targetTier.TryGet(key, out _);
         }
-        catch
+        catch (Exception ex)
         {
+            // Expected behavior for missing keys in some cache implementations (e.g., S3)
+            // Log as debug instead of error since this is normal during migration
+            _logger.LogDebug(ex, "Expected exception while checking if key exists in target tier for migration");
             return false; // If probing target fails, don't migrate this key
         }
     }
@@ -572,7 +575,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// Returns true if the key-value pair is successfully migrated or does not exist in the source tier.
     /// Returns false if the migration operation fails due to an exception.
     /// </returns>
-    private static bool TryMigrateKey(TKey key, ICache<TKey, TValue> sourceTier, ICache<TKey, TValue> targetTier)
+    private bool TryMigrateKey(TKey key, ICache<TKey, TValue> sourceTier, ICache<TKey, TValue> targetTier)
     {
         try
         {
@@ -580,10 +583,12 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
                 return true; // Continue with other keys
 
             targetTier.Set(key, value);
+            _logger.LogDebug("Successfully migrated key '{Key}' between tiers", key);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to migrate key '{Key}' between tiers, aborting migration", key);
             return false; // Abort migration on any failure
         }
     }

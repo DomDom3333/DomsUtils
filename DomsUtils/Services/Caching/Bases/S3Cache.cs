@@ -169,25 +169,29 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
         try
         {
             string keyString = ConvertKey(key);
-            _logger.LogDebug("Attempting to get value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
-            
+            _logger.LogDebug("Attempting to get value for key '{Key}' from S3 bucket '{BucketName}'", keyString,
+                BucketName);
+
             GetObjectResponse? response = S3Client.GetObjectAsync(BucketName, keyString).Result;
 
-            using (response.ResponseStream)
-            {
-                value = JsonSerializer.Deserialize<TValue>(response.ResponseStream, _serializerOptions)!;
-                _logger.LogDebug("Successfully retrieved value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
-                return true;
-            }
+            using var stream = response.ResponseStream;
+            value = JsonSerializer.Deserialize<TValue>(response.ResponseStream, _serializerOptions)!;
+            _logger.LogDebug("Successfully retrieved value for key '{Key}' from S3 bucket '{BucketName}'",
+                keyString, BucketName);
+            return true;
         }
-        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (Amazon.S3.AmazonS3Exception ex) when
+            (ex.ErrorCode == "NoSuchKey" || ex.Message.Contains("Key not found"))
         {
+            // Expected behavior for missing keys - don't log as error
             _logger.LogDebug("Key '{Key}' not found in S3 bucket '{BucketName}'", key, BucketName);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error retrieving value for key '{Key}' from S3 bucket '{BucketName}'", key, BucketName);
+            // Unexpected errors should still be logged
+            _logger?.LogError(ex, "Unexpected error retrieving key '{Key}' from S3 bucket '{BucketName}'", key,
+                BucketName);
             return false;
         }
     }
