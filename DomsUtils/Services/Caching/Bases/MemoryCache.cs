@@ -19,7 +19,7 @@ namespace DomsUtils.Services.Caching.Bases;
 /// <item><see cref="ICacheEvents{TKey, TValue}"/></item>
 /// </list>
 /// </remarks>
-public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailability, ICacheEnumerable<TKey>,
+public class MemoryCache<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability, ICacheEnumerable<TKey>,
     ICacheEvents<TKey, TValue> where TKey : notnull
 {
     /// <summary>
@@ -71,7 +71,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// <param name="logger">The logger to use for logging cache operations.</param>
     public MemoryCache(ILogger logger)
     {
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;;
         OnSet = delegate { };
         _logger.LogDebug("MemoryCache initialized");
     }
@@ -95,7 +95,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// <param name="key">The key of the value to retrieve from the cache.</param>
     /// <param name="value">When this method returns, contains the value associated with the specified key, if the key is found; otherwise, the default value for the type of the value parameter.</param>
     /// <returns>True if the specified key exists in the cache; otherwise, false.</returns>
-    protected override bool TryGetInternal(TKey key, out TValue value)
+    protected  bool TryGetInternal(TKey key, out TValue value)
     {
         _logger.LogDebug("Attempting to get value for key '{Key}' from memory cache", key);
         using (_lock.EnterScope())
@@ -119,10 +119,33 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// </summary>
     /// <param name="key">The key to add or update in the cache.</param>
     /// <param name="value">The value to associate with the specified key in the cache.</param>
-    public override void Set(TKey key, TValue value)
+    public  void Set(TKey key, TValue value)
     {
-        base.Set(key, value);
+        SetInternal(key, value);
         OnSet?.Invoke(key, value);
+    }
+
+    /// <summary>
+    /// Removes the specified key and its associated value from the cache.
+    /// </summary>
+    /// <param name="key">The key of the item to remove from the cache. Must not be null.</param>
+    /// <returns>
+    /// true if the key was successfully removed from the cache; otherwise, false.
+    /// Returns false if the key does not exist in the cache or if the key is null.
+    /// </returns>
+    public bool Remove(TKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return RemoveInternal(key);
+    }
+
+
+    /// <summary>
+    /// Removes all entries from the cache.
+    /// </summary>
+    public void Clear()
+    {
+        ClearInternal();
     }
 
     /// <summary>
@@ -131,7 +154,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// </summary>
     /// <param name="key">The key associated with the value to be stored in the cache.</param>
     /// <param name="value">The value to be stored in the cache for the specified key.</param>
-    protected override void SetInternal(TKey key, TValue value)
+    protected  void SetInternal(TKey key, TValue value)
     {
         _logger.LogDebug("Setting value for key '{Key}' in memory cache", key);
         using (_lock.EnterScope())
@@ -148,7 +171,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// <returns>
     /// True if the item was successfully removed from the cache; otherwise, false.
     /// </returns>
-    protected override bool RemoveInternal(TKey key)
+    protected  bool RemoveInternal(TKey key)
     {
         _logger.LogDebug("Removing value for key '{Key}' from memory cache", key);
         using (_lock.EnterScope())
@@ -171,7 +194,7 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// This method is protected and is meant to be used internally by subclasses
     /// to remove all items from the underlying cache data structure.
     /// </summary>
-    protected override void ClearInternal()
+    protected  void ClearInternal()
     {
         _logger.LogWarning("Clearing all entries from memory cache");
         using (_lock.EnterScope())
@@ -188,12 +211,12 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// <returns>
     /// An enumerable containing all keys in the cache.
     /// </returns>
-    public override IEnumerable<TKey> Keys()
+    public  IEnumerable<TKey> Keys()
     {
         _logger.LogDebug("Retrieving all keys from memory cache");
         using (_lock.EnterScope())
         {
-            var keys = _cache.Keys.ToList();
+            List<TKey> keys = _cache.Keys.ToList();
             _logger.LogDebug("Retrieved {Count} keys from memory cache", keys.Count);
             return keys;
         }
@@ -205,10 +228,43 @@ public class MemoryCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabi
     /// to ensure the cache is fully operational and thread-safe.
     /// </summary>
     /// <returns>True if the cache is available; otherwise, false.</returns>
-    public override bool IsAvailable()
+    public  bool IsAvailable()
     {
         _logger.LogDebug("Checking memory cache availability");
-        TKey testKey = (TKey)(object)Guid.NewGuid().ToString(); // Works for string keys. For other types, provide a suitable unique key.
+        
+        // Generate a unique test key based on the key type
+        TKey testKey;
+        if (typeof(TKey) == typeof(string))
+        {
+            testKey = (TKey)(object)Guid.NewGuid().ToString();
+        }
+        else if (typeof(TKey) == typeof(int))
+        {
+            testKey = (TKey)(object)Random.Shared.Next();
+        }
+        else if (typeof(TKey) == typeof(Guid))
+        {
+            testKey = (TKey)(object)Guid.NewGuid();
+        }
+        else if (typeof(TKey) == typeof(long))
+        {
+            testKey = (TKey)(object)Random.Shared.NextInt64();
+        }
+        else
+        {
+            // For other types, try to create a default instance
+            try
+            {
+                testKey = Activator.CreateInstance<TKey>();
+            }
+            catch
+            {
+                // If we can't create a test key, assume the cache is available
+                _logger.LogDebug("Cannot create test key for type {KeyType}, assuming cache is available", typeof(TKey).Name);
+                return true;
+            }
+        }
+        
         TValue? testValue = default(TValue);
         try
         {

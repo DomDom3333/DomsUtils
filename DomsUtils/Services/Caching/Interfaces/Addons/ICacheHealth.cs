@@ -1,6 +1,6 @@
 ﻿namespace DomsUtils.Services.Caching.Interfaces.Addons;
 
-public class ICacheHealth
+public interface ICacheHealth
 {
     public bool IsHealthy { get; set; }
     public string? HealthMessage { get; set; }

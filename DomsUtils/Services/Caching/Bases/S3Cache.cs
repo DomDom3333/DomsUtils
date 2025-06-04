@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Amazon.S3;
@@ -14,7 +15,8 @@ namespace DomsUtils.Services.Caching.Bases;
 /// </summary>
 /// <typeparam name="TKey">The key type (must be non-null)</typeparam>
 /// <typeparam name="TValue">The value type</typeparam>
-public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
+public class S3Cache<TKey, TValue> :
+    ICache<TKey, TValue>,
     ICacheAvailability,
     ICacheEnumerable<TKey>,
     ICacheEvents<TKey, TValue>
@@ -55,7 +57,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// <summary>
     /// Logger instance for logging cache operations.
     /// </summary>
-    private readonly ILogger _logger;
+    protected readonly ILogger _logger;
 
     /// <summary>
     /// Event triggered after a value has been successfully added or updated in the S3 cache.
@@ -162,7 +164,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// <param name="key">The key used to locate the cached value.</param>
     /// <param name="value">The retrieved value, if found in the cache. If not, the default value for the type is returned.</param>
     /// <returns>True if the value is successfully retrieved; otherwise, false.</returns>
-    protected override bool TryGetInternal(TKey key, out TValue value)
+    protected  bool TryGetInternal(TKey key, out TValue value)
     {
         value = default!;
 
@@ -174,7 +176,12 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
 
             GetObjectResponse? response = S3Client.GetObjectAsync(BucketName, keyString).Result;
 
-            using var stream = response.ResponseStream;
+            if (response is null || response.ResponseStream is null || response.HttpStatusCode != HttpStatusCode.OK)
+            {
+                return false;
+            }
+            
+            using Stream? stream = response.ResponseStream;
             value = JsonSerializer.Deserialize<TValue>(response.ResponseStream, _serializerOptions)!;
             _logger.LogDebug("Successfully retrieved value for key '{Key}' from S3 bucket '{BucketName}'",
                 keyString, BucketName);
@@ -208,7 +215,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// </summary>
     /// <param name="key">The key associated with the value to store. Must not be null.</param>
     /// <param name="value">The value to store in the cache.</param>
-    protected override void SetInternal(TKey key, TValue value)
+    protected  void SetInternal(TKey key, TValue value)
     {
         ArgumentNullException.ThrowIfNull(key);
 
@@ -249,26 +256,28 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// True if the item was successfully removed, or false if the key is null,
     /// the item does not exist, or an exception occurred during deletion.
     /// </returns>
-    protected override bool RemoveInternal(TKey key)
+    protected bool RemoveInternal(TKey key)
     {
         try
         {
-            string keyString = ConvertKey(key);
-            _logger.LogDebug("Removing value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
-            
-            S3Client.DeleteObjectAsync(BucketName, keyString).Wait();
-            _logger.LogInformation("Successfully removed value for key '{Key}' from S3 bucket '{BucketName}'", keyString, BucketName);
+            string deleteKey = ConvertKey(key);
+            DeleteObjectResponse? response = S3Client.DeleteObjectAsync(BucketName, deleteKey).GetAwaiter().GetResult();
+            if (response is null)
+            {
+                return false;
+            }
+            _logger.LogInformation("Successfully removed value for key '{Key}' from S3 bucket '{BucketName}'", deleteKey, BucketName);
             return true;
         }
-        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (AmazonS3Exception ex) when (ex.ErrorCode == "NoSuchKey")
         {
             _logger.LogDebug("Key '{Key}' not found for removal in S3 bucket '{BucketName}'", key, BucketName);
-            return false;
+            return false; // Key doesn't exist
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error removing value for key '{Key}' from S3 bucket '{BucketName}'", key, BucketName);
-            return false;
+            return false; // Any other exception
         }
     }
 
@@ -280,7 +289,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// and deletes them in batches, ensuring that the bucket is cleared completely.
     /// It employs paginated requests to handle large datasets.
     /// </remarks>
-    protected override void ClearInternal()
+    protected  void ClearInternal()
     {
         _logger.LogWarning("Clearing all objects from S3 bucket '{BucketName}'", BucketName);
         
@@ -322,12 +331,17 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// Checks whether the S3Cache is available by verifying the accessibility of the S3 bucket.
     /// </summary>
     /// <returns>True if the S3 bucket is accessible, otherwise false.</returns>
-    public override bool IsAvailable()
+    public  bool IsAvailable()
     {
         try
         {
             _logger.LogDebug("Checking availability of S3 bucket '{BucketName}'", BucketName);
-            S3Client.GetBucketLocationAsync(BucketName).Wait();
+            ListObjectsV2Request request = new ListObjectsV2Request
+            {
+                BucketName = BucketName,
+                MaxKeys = 1
+            };
+            S3Client.ListObjectsV2Async(request).Wait();
             _logger.LogDebug("S3 bucket '{BucketName}' is available", BucketName);
             return true;
         }
@@ -341,7 +355,7 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     /// <summary>
     /// Represents a collection of keys used within a system.
     /// </summary>
-    public override IEnumerable<TKey> Keys()
+    public  IEnumerable<TKey> Keys()
     {
         if (_reverseKeyConverter == null)
         {
@@ -352,7 +366,8 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
 
         try
         {
-            return GetKeysInternal();
+            // Force enumeration to happen immediately so exceptions are caught here
+            return GetKeysInternal().ToList();
         }
         catch (Exception ex)
         {
@@ -369,28 +384,92 @@ public class S3Cache<TKey, TValue> : CacheBase<TKey, TValue>,
     private IEnumerable<TKey> GetKeysInternal()
     {
         ListObjectsV2Request request = new ListObjectsV2Request { BucketName = BucketName, MaxKeys = 1000 };
-        
+    
         do
         {
-            ListObjectsV2Response? response = S3Client.ListObjectsV2Async(request).Result;
+            ListObjectsV2Response? response;
+            try
+            {
+                response = S3Client.ListObjectsV2Async(request).Result;
+            }
+            catch (AggregateException ex) when (ex.InnerException != null)
+            {
+                throw ex.InnerException;
+            }
 
             if (response?.S3Objects is null)
             {
                 _logger.LogWarning($"Response was null or S3Objects was null. Continuing with next page. Code: {response?.HttpStatusCode}");
+                request.ContinuationToken = response?.NextContinuationToken;
                 continue;
             }
-            
+        
             foreach (S3Object? obj in response.S3Objects)
             {
-                if (obj.Key is null)
+                if (obj?.Key is null)
                     continue;
-                
+            
                 yield return _reverseKeyConverter!(obj.Key);
             }
 
             request.ContinuationToken = response.NextContinuationToken;
         }
         while (request.ContinuationToken != null);
+    }
+
+    /// <summary>
+    /// Attempts to retrieve a value associated with the specified key from the cache.
+    /// </summary>
+    /// <param name="key">The key used to locate the value in the cache.</param>
+    /// <param name="value">When this method returns, contains the value associated with the specified key, if the key is found; otherwise, the default value for the type of the value parameter.</param>
+    /// <returns>True if the key is found in the cache; otherwise, false.</returns>
+    public bool TryGet(TKey key, out TValue? value)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        return TryGetInternal(key, out value);
+    }
+
+    /// <summary>
+    /// Stores the specified key-value pair in the Amazon S3-backed cache.
+    /// </summary>
+    /// <param name="key">The key associated with the value to be stored. Must not be null.</param>
+    /// <param name="value">The value to store in the cache.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the key is null.</exception>
+    public void Set(TKey key, TValue value)
+    {
+        if (key is null)
+            throw new ArgumentNullException(nameof(key));
+
+        SetInternal(key, value);
+    }
+
+    /// <summary>
+    /// Removes an item from the cache based on the provided key.
+    /// </summary>
+    /// <param name="key">The key of the item to remove.</param>
+    /// <returns>
+    /// True if the item is successfully removed; otherwise, false.
+    /// </returns>
+    public bool Remove(TKey key)
+    {
+        if (key is null)
+            return false;
+
+        return RemoveInternal(key);
+    }
+
+    /// <summary>
+    /// Removes all items from the Amazon S3-backed cache.
+    /// </summary>
+    /// <remarks>
+    /// This method deletes all objects stored in the S3 bucket associated with the cache.
+    /// It handles pagination to ensure all items are removed,
+    /// and no exceptions are propagated in case of errors during the operation.
+    /// </remarks>
+    public void Clear()
+    {
+        ClearInternal();
     }
 }
 
@@ -441,7 +520,8 @@ public class S3Cache<TValue> : S3Cache<string, TValue>
     {
         try
         {
-            return GetKeysInternal();
+            // Force enumeration to happen immediately so exceptions are caught here
+            return GetKeysInternal().ToList();
         }
         catch (Exception ex)
         {
@@ -461,13 +541,56 @@ public class S3Cache<TValue> : S3Cache<string, TValue>
         
         do
         {
-            ListObjectsV2Response? response = S3Client.ListObjectsV2Async(request).Result;
-            
+            ListObjectsV2Response? response;
+            try
+            {
+                response = S3Client.ListObjectsV2Async(request).Result;
+            }
+            catch (AggregateException ex) when (ex.InnerException != null)
+            {
+                throw ex.InnerException;
+            }
+
+            if (response?.S3Objects is null)
+            {
+                _logger.LogWarning($"Response was null or S3Objects was null. Continuing with next page. Code: {response?.HttpStatusCode}");
+                continue;
+            }
+        
             foreach (S3Object? obj in response.S3Objects)
+            {
+                if (obj.Key is null)
+                    continue;
+                    
                 yield return obj.Key;
+            }
 
             request.ContinuationToken = response.NextContinuationToken;
         }
         while (request.ContinuationToken != null);
+    }
+
+    public bool IsAvailable()
+    {
+        try
+        {
+            S3Client.GetBucketLocationAsync(new GetBucketLocationRequest
+            {
+                BucketName = this.BucketName
+            }).GetAwaiter().GetResult();
+            return true;
+        }
+        catch (AmazonS3Exception ex)
+        {
+            // Log the exception if logger is available
+            _logger.LogWarning(ex, "S3 bucket '{BucketName}' is not available", BucketName);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Log unexpected exceptions if logger is available
+            _logger.LogError(ex, "Unexpected error checking S3 bucket '{BucketName}' availability", BucketName);
+            return false;
+        }
     }
 }

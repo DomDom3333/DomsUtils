@@ -59,7 +59,7 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratable,
 
         _caches = new List<ICache<TKey, TValue>>(caches);
         _migrationRuleSet = migrationRuleSet;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
 
         _logger.LogInformation("TieredCache initialized with {CacheCount} caches.", _caches.Count);
 
@@ -283,30 +283,39 @@ public class TieredCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratable,
         }
     }
 
-    /// <summary>
-    /// Promotes a specified key and value from a lower-priority cache to higher-priority caches based on migration rules.
-    /// </summary>
-    /// <param name="key">The key associated with the value to be promoted.</param>
-    /// <param name="value">The value to be promoted to higher-priority caches.</param>
-    /// <param name="foundIndex">The index of the cache where the key-value pair was found.</param>
     private void Promote(TKey key, TValue value, int foundIndex)
     {
-        _logger.LogDebug("Promoting key '{Key}' from tier {FoundIndex}.", key, foundIndex);
-        for (int j = 0; j < foundIndex; j++)
+        // Promote to all higher-priority tiers (lower indices)
+        for (int targetTierIndex = 0; targetTierIndex < foundIndex; targetTierIndex++)
         {
-            ICache<TKey, TValue> targetCache = _caches[j];
-            if (targetCache is ICacheAvailability avail && !avail.IsAvailable())
-                continue;
-            bool migrate = _migrationRuleSet == null || _migrationRuleSet.ShouldMigrate(key, value, foundIndex, j, _caches[j], targetCache);
-            if (migrate)
+            try
             {
-                try
+                var targetCache = _caches[targetTierIndex];
+                var sourceCache = _caches[foundIndex];
+            
+                // Check if this cache is available
+                if (targetCache is ICacheAvailability aval && !aval.IsAvailable())
                 {
-                    targetCache.Set(key, value);
+                    _logger?.LogWarning("Cache tier {TierIndex} is not available for promotion", targetTierIndex);
+                    continue;
                 }
-                catch
+
+                // Check migration rules before promoting
+                if (_migrationRuleSet != null && 
+                    !_migrationRuleSet.ShouldMigrate(key, value, foundIndex, targetTierIndex, sourceCache, targetCache))
                 {
+                    _logger?.LogDebug("Migration rule prevented promotion of key {Key} from tier {SourceTier} to tier {TargetTier}", 
+                        key, foundIndex, targetTierIndex);
+                    continue;
                 }
+
+                targetCache.Set(key, value);
+                _logger?.LogDebug("Promoted key {Key} from tier {SourceTier} to tier {TargetTier}", 
+                    key, foundIndex, targetTierIndex);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error promoting key {Key} to tier {TierIndex}", key, targetTierIndex);
             }
         }
     }

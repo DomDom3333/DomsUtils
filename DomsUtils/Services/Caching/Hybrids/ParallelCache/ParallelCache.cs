@@ -43,7 +43,7 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
     {
         _logger.LogDebug("Attempting to retrieve key '{Key}' from ParallelCache.", key);
         
-        foreach (var cache in _caches)
+        foreach (ICache<TKey, TValue> cache in _caches)
         {
             if (!IsCacheAvailable(cache))
                 continue;
@@ -74,7 +74,7 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
     {
         _logger.LogDebug("Setting key '{Key}' in all caches.", key);
         
-        var tasks = _caches
+        Task[] tasks = _caches
             .Where(IsCacheAvailable)
             .Select(cache => Task.Run(() =>
             {
@@ -97,8 +97,8 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
     {
         _logger.LogDebug("Removing key '{Key}' from all caches.", key);
         
-        var removed = new bool[1]; // Use array for reference semantics
-        var tasks = _caches
+        bool[] removed = new bool[1]; // Use array for reference semantics
+        Task[] tasks = _caches
             .Where(IsCacheAvailable)
             .Select(cache => Task.Run(() =>
             {
@@ -132,7 +132,7 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
     {
         _logger.LogWarning("Clearing all caches in ParallelCache.");
         
-        var tasks = _caches
+        Task[] tasks = _caches
             .Where(IsCacheAvailable)
             .Select(cache => Task.Run(() =>
             {
@@ -181,7 +181,7 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
 
     private void SynchronizeCaches()
     {
-        var availableCaches = _caches.Where(IsCacheAvailable).ToList();
+        List<ICache<TKey, TValue>> availableCaches = _caches.Where(IsCacheAvailable).ToList();
         
         if (availableCaches.Count < 2)
         {
@@ -190,16 +190,16 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
         }
 
         // Collect all keys from all caches
-        var allKeysFromCaches = new Dictionary<ICache<TKey, TValue>, HashSet<TKey>>();
-        var allUniqueKeys = new HashSet<TKey>();
+        Dictionary<ICache<TKey, TValue>, HashSet<TKey>> allKeysFromCaches = new Dictionary<ICache<TKey, TValue>, HashSet<TKey>>();
+        HashSet<TKey> allUniqueKeys = new HashSet<TKey>();
 
-        foreach (var cache in availableCaches)
+        foreach (ICache<TKey, TValue> cache in availableCaches)
         {
             if (cache is ICacheEnumerable<TKey> enumerable)
             {
-                var keys = enumerable.Keys().ToHashSet();
+                HashSet<TKey> keys = enumerable.Keys().ToHashSet();
                 allKeysFromCaches[cache] = keys;
-                foreach (var key in keys)
+                foreach (TKey key in keys)
                     allUniqueKeys.Add(key);
             }
             else
@@ -212,16 +212,16 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
         int totalRemoved = 0;
 
         // Process each unique key
-        foreach (var key in allUniqueKeys)
+        foreach (TKey key in allUniqueKeys)
         {
-            var cachesWithKey = availableCaches.Where(c => allKeysFromCaches[c].Contains(key)).ToList();
-            var cachesWithoutKey = availableCaches.Where(c => !allKeysFromCaches[c].Contains(key)).ToList();
+            List<ICache<TKey, TValue>> cachesWithKey = availableCaches.Where(c => allKeysFromCaches[c].Contains(key)).ToList();
+            List<ICache<TKey, TValue>> cachesWithoutKey = availableCaches.Where(c => !allKeysFromCaches[c].Contains(key)).ToList();
 
             // Apply consensus logic
             if (ShouldRemoveKey(key, cachesWithoutKey.Count, availableCaches.Count))
             {
                 // Remove key from caches that have it
-                foreach (var cache in cachesWithKey)
+                foreach (ICache<TKey, TValue> cache in cachesWithKey)
                 {
                     try
                     {
@@ -238,11 +238,11 @@ public class ParallelCache<TKey, TValue> : ICache<TKey, TValue>, ICacheMigratabl
             else if (cachesWithKey.Count > 0 && cachesWithoutKey.Count > 0)
             {
                 // Get value from first available cache that has it
-                var sourceCache = cachesWithKey.First();
-                if (sourceCache.TryGet(key, out var value))
+                ICache<TKey, TValue> sourceCache = cachesWithKey.First();
+                if (sourceCache.TryGet(key, out TValue? value))
                 {
                     // Sync to caches that don't have it
-                    foreach (var cache in cachesWithoutKey)
+                    foreach (ICache<TKey, TValue> cache in cachesWithoutKey)
                     {
                         try
                         {

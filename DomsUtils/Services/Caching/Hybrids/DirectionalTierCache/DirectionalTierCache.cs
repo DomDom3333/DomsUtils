@@ -2,52 +2,8 @@
 using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
-namespace DomsUtils.Services.Caching.Hybrids;
-
-/// <summary>
-/// Specifies the direction in which a cache should traverse its tiers during operations such as reading or writing.
-/// The two available directions determine the order in which cache tiers are accessed:
-/// • LowToHigh: Starts at the lowest index (e.g., 0) and progresses upwards through the tiers.
-/// • HighToLow: Starts at the highest index (e.g., N-1) and progresses downwards through the tiers.
-/// </summary>
-public enum CacheDirection
-{
-    /// <summary>
-    /// Represents a cache behavior where operations are performed in ascending order of tiers,
-    /// starting from the lowest index (0) and proceeding sequentially to the highest index (N-1).
-    /// </summary>
-    LowToHigh,
-
-    /// <summary>
-    /// Represents a cache behavior where operations are performed in descending order of tiers,
-    /// starting from the highest index (N-1) and proceeding sequentially to the lowest index (0).
-    /// </summary>
-    HighToLow
-}
-
-/// <summary>
-/// Defines the strategy for migrating cache entries between tiers in a multi-tier caching system.
-/// • PromoteTowardPrimary: Moves items step-by-step upward, in the direction of the primary/first tier.
-/// • DemoteTowardSecondary: Moves items step-by-step downward, toward the secondary/last tier.
-/// </summary>
-public enum MigrationStrategy
-{
-    /// <summary>
-    /// Specifies that, when migrating cached items between tiers, entries should be promoted
-    /// step-by-step toward the primary tier (the tier checked first during cache lookup).
-    /// </summary>
-    PromoteTowardPrimary,
-
-    /// <summary>
-    /// Specifies the migration strategy where entries are moved step-by-step
-    /// toward the "secondary" tier, relative to the tier check order.
-    /// This strategy is typically used to demote entries from higher-priority
-    /// tiers to lower-priority tiers when conditions demand a reverse migration.
-    /// </summary>
-    DemoteTowardSecondary
-}
+namespace DomsUtils.Services.Caching.Hybrids.DirectionalTierCache;
 
 /// <summary>
 /// Represents a tiered caching mechanism that organizes caches in directional tiers, allowing migration
@@ -576,7 +532,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
             {
                 // Use dynamic to call the overridden Keys() method on S3Cache<TValue>
                 dynamic dynamicCache = s3StringCache;
-                var keys = dynamicCache.Keys();
+                dynamic? keys = dynamicCache.Keys();
                 return keys as IEnumerable<TKey>;
             }
             // Check if source implements ICacheEnumerable<TKey>
@@ -646,7 +602,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         try
         {
             // First, try to get the value from the source tier
-            if (!sourceTier.TryGet(key, out var value))
+            if (!sourceTier.TryGet(key, out TValue? value))
             {
                 // Key doesn't exist in source, nothing to migrate
                 return false;
@@ -686,6 +642,47 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     private readonly record struct MigrationParameters(int Start, int End, int Step, int NeighborOffset);
 
     /// <summary>
+    /// Releases unmanaged resources associated with the current instance of the cache.
+    /// </summary>
+    /// <remarks>
+    /// This method is invoked internally during the disposal process to ensure proper cleanup
+    /// of unmanaged resources, such as handles or connections, preventing potential resource leaks.
+    /// </remarks>
+    private void ReleaseUnmanagedResources()
+    {
+        try
+        {
+            // Add null check for _tiers array to prevent finalizer crashes
+            if (_tiers != null)
+            {
+                // If any of the underlying cache tiers hold unmanaged resources
+                // and implement IDisposable, release them here.
+                foreach (ICache<TKey, TValue> tier in _tiers)
+                {
+                    // Add null check for individual tier
+                    if (tier is IDisposable disposable)
+                    {
+                        try
+                        {
+                            disposable.Dispose();
+                        }
+                        catch
+                        {
+                            // Optionally log the error; swallow to avoid throwing during cleanup.
+                            // Note: Don't use _logger here as it might be null during finalization
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Suppress all exceptions in finalizer to prevent process crashes
+            // This is critical when called from the finalizer (~DirectionalTierCache)
+        }
+    }
+
+    /// <summary>
     /// Releases all resources used by the <see cref="DirectionalTierCache{TKey, TValue}"/> instance.
     /// </summary>
     /// <param name="disposing">
@@ -697,13 +694,44 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// associated with the cache tiers. It is called by the public <see cref="Dispose()"/> method
     /// for explicit disposal and during the finalizer process for garbage collection.
     /// </remarks>
-    private void Dispose(bool disposing)
+    public void Dispose(bool disposing)
     {
-        ReleaseUnmanagedResources();
-        if (disposing)
+        try
         {
-            _migrationTimer?.Dispose();
+            ReleaseUnmanagedResources();
+            
+            if (disposing)
+            {
+                // Only dispose managed resources when called from Dispose(), not from finalizer
+                _migrationTimer?.Dispose();
+            }
         }
+        catch
+        {
+            // Suppress exceptions during disposal, especially in finalizer
+            if (!disposing)
+            {
+                // We're in the finalizer, absolutely no exceptions allowed
+            }
+            else
+            {
+                // Re-throw if called from explicit Dispose() so caller knows there was an issue
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Releases all resources used by the <see cref="DirectionalTierCache{TKey, TValue}"/> instance.
+    /// </summary>
+    /// <remarks>
+    /// This method is called to explicitly release both managed and unmanaged resources used by the cache.
+    /// It ensures proper resource cleanup and suppresses finalization to optimize garbage collection.
+    /// </remarks>
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -738,46 +766,6 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     }
 
     /// <summary>
-    /// Releases unmanaged resources associated with the current instance of the cache.
-    /// </summary>
-    /// <remarks>
-    /// This method is invoked internally during the disposal process to ensure proper cleanup
-    /// of unmanaged resources, such as handles or connections, preventing potential resource leaks.
-    /// </remarks>
-    private void ReleaseUnmanagedResources()
-    {
-        // If any of the underlying cache tiers hold unmanaged resources
-        // and implement IDisposable, release them here.
-        foreach (ICache<TKey, TValue> tier in _tiers)
-        {
-            if (tier is IDisposable disposable)
-            {
-                try
-                {
-                    disposable.Dispose();
-                }
-                catch
-                {
-                    // Optionally log the error; swallow to avoid throwing during cleanup.
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Releases all resources used by the <see cref="DirectionalTierCache{TKey, TValue}"/> instance.
-    /// </summary>
-    /// <remarks>
-    /// This method is called to explicitly release both managed and unmanaged resources used by the cache.
-    /// It ensures proper resource cleanup and suppresses finalization to optimize garbage collection.
-    /// </remarks>
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    /// <summary>
     /// Asynchronously releases the unmanaged resources used by the cache and performs cleanup operations.
     /// </summary>
     /// <returns>
@@ -785,9 +773,18 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
     /// </returns>
     private async ValueTask DisposeAsyncCore()
     {
-        ReleaseUnmanagedResources();
+        try
+        {
+            ReleaseUnmanagedResources();
 
-        if (_migrationTimer != null) await _migrationTimer.DisposeAsync();
+            if (_migrationTimer != null) 
+                await _migrationTimer.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Suppress exceptions during async disposal
+            // Async disposal should not throw
+        }
     }
 
     /// <summary>

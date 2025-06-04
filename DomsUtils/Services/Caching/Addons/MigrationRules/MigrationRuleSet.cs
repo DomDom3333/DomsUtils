@@ -54,7 +54,7 @@ public class MigrationRuleSet<TKey, TValue> : IMigrationRule<TKey, TValue>
 
     /// <summary>
     /// Determines whether a key/value pair should migrate between two tiers based on the defined migration rules.
-    /// If no specific rule matches, the method returns true by default.
+    /// If no specific rule matches, the method returns false by default.
     /// </summary>
     /// <param name="key">The key of the data entry being evaluated for migration.</param>
     /// <param name="value">The value of the data entry being evaluated for migration.</param>
@@ -73,7 +73,7 @@ public class MigrationRuleSet<TKey, TValue> : IMigrationRule<TKey, TValue>
                 return true;
         }
 
-        return true;
+        return false; // Changed from true to false - no rules means no migration allowed
     }
 
     /// <summary>

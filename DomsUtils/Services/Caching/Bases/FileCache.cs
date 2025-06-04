@@ -21,7 +21,7 @@ namespace DomsUtils.Services.Caching.Bases;
 /// and <see cref="ICacheEnumerable{TKey}"/> to provide functionality for checking cache availability
 /// and enumerating stored keys.
 /// </remarks>
-public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailability, ICacheEnumerable<TKey>
+public class FileCache<TKey, TValue> : ICache<TKey, TValue>, ICacheAvailability, ICacheEnumerable<TKey>
     where TKey : notnull
 {
     /// <summary>
@@ -267,7 +267,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// A boolean value indicating whether the specified key exists in the cache.
     /// Returns true if the key exists and the value is successfully retrieved; otherwise, false.
     /// </returns>
-    protected override bool TryGetInternal(TKey key, out TValue value)
+    protected bool TryGetInternal(TKey key, out TValue? value)
     {
         value = default!;
 
@@ -289,7 +289,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
-                    value = JsonSerializer.Deserialize<TValue>(json) ?? throw new InvalidOperationException();
+                    value = JsonSerializer.Deserialize<TValue>(json);
                     _logger.LogDebug("Successfully retrieved value from file '{FilePath}'", filePath);
                     return true;
                 }
@@ -315,7 +315,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// </summary>
     /// <param name="key">The key associated with the value being stored in the cache.</param>
     /// <param name="value">The value to be stored in the cache.</param>
-    protected override void SetInternal(TKey key, TValue value)
+    protected void SetInternal(TKey key, TValue value)
     {
         if (key is null)
             throw new ArgumentNullException(nameof(key));
@@ -351,7 +351,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// A boolean value indicating whether the item was successfully removed.
     /// Returns true if the item existed and was removed; otherwise, false.
     /// </returns>
-    protected override bool RemoveInternal(TKey key)
+    protected bool RemoveInternal(TKey key)
     {
         try
         {
@@ -406,7 +406,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// file deletion process. Any exceptions encountered during the clearing
     /// operation are silently handled.
     /// </remarks>
-    protected override void ClearInternal()
+    protected void ClearInternal()
     {
         try
         {
@@ -452,7 +452,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// <returns>
     /// An enumerable collection of keys available in the cache.
     /// </returns>
-    public override IEnumerable<TKey> Keys()
+    public IEnumerable<TKey> Keys()
     {
         _logger.LogDebug("Retrieving all keys from file cache");
         
@@ -460,7 +460,7 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
         {
             // Return a copy of the keys to avoid modification issues
             int count = _keyToFileMap.Keys.Count;
-            var keys = _keyToFileMap.Keys.ToList();
+            List<TKey> keys = _keyToFileMap.Keys.ToList();
             _logger.LogDebug("Retrieved {Count} keys from file cache", count);
             return keys;
         }
@@ -473,37 +473,98 @@ public class FileCache<TKey, TValue> : CacheBase<TKey, TValue>, ICacheAvailabili
     /// A boolean value indicating the availability of the cache.
     /// Returns <c>true</c> if the cache is available; otherwise, <c>false</c>.
     /// </returns>
-    public override bool IsAvailable()
+   public bool IsAvailable()
+   {
+       try
+       {
+           _logger.LogDebug("Checking availability of file cache directory '{DirectoryPath}'", _directoryPath);
+   
+           // Check if the directory exists
+           if (!Directory.Exists(_directoryPath))
+           {
+               _logger.LogWarning("Cache directory '{DirectoryPath}' does not exist", _directoryPath);
+               return false;
+           }
+   
+           // Attempt to create and delete a uniquely named temporary file
+           string testFileName = Guid.NewGuid().ToString("N") + ".tmp";
+           string testFilePath = Path.Combine(_directoryPath, testFileName);
+           _logger.LogDebug("Creating test file '{TestFilePath}' to verify cache availability", testFilePath);
+   
+           File.WriteAllText(testFilePath, "availability check");
+           File.Delete(testFilePath);
+   
+           _logger.LogDebug("File cache is available at '{DirectoryPath}'", _directoryPath);
+           return true;
+       }
+       catch (Exception ex)
+       {
+           _logger.LogWarning(ex, "File cache at '{DirectoryPath}' is not available", _directoryPath);
+           return false;
+       }
+   }
+
+    /// <summary>
+    /// Attempts to retrieve the value associated with the specified key from the cache.
+    /// </summary>
+    /// <param name="key">The key whose associated value is to be retrieved.</param>
+    /// <param name="value">
+    /// When this method returns, contains the value associated with the specified key,
+    /// if the key is found; otherwise, the default value for the type of the value parameter.
+    /// This parameter is passed uninitialized.
+    /// </param>
+    /// <returns>
+    /// True if the key exists in the cache and the value was successfully retrieved; otherwise, false.
+    /// </returns>
+    public bool TryGet(TKey key, out TValue? value)
     {
-        try
+        if (key is null)
         {
-            _logger.LogDebug("Checking availability of file cache directory '{DirectoryPath}'", _directoryPath);
-            
-            // Check if the directory exists and is accessible
-            if (!Directory.Exists(_directoryPath))
-            {
-                _logger.LogWarning("Cache directory '{DirectoryPath}' does not exist", _directoryPath);
-                return false;
-            }
-
-            // Attempt to create a uniquely named temporary file to avoid deleting any existing file
-            string testFileName = Guid.NewGuid().ToString("N") + ".tmp";
-            string testFilePath = Path.Combine(_directoryPath, testFileName);
-            _logger.LogDebug("Creating test file '{TestFilePath}' to verify cache availability", testFilePath);
-
-            // Write to the test file
-            File.WriteAllText(testFilePath, "availability check");
-
-            // Delete the test file
-            File.Delete(testFilePath);
-            
-            _logger.LogDebug("File cache is available at '{DirectoryPath}'", _directoryPath);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "File cache at '{DirectoryPath}' is not available", _directoryPath);
+            value = default;
             return false;
         }
+
+        return TryGetInternal(key, out value);
+    }
+
+    /// <summary>
+    /// Stores an item in the file cache with the specified key and value.
+    /// </summary>
+    /// <param name="key">The key used to identify the cached item. Cannot be null.</param>
+    /// <param name="value">The value to be cached associated with the specified key.</param>
+    public void Set(TKey key, TValue value)
+    {
+        if (key is null)
+            throw new ArgumentNullException(nameof(key));
+
+        SetInternal(key, value);
+    }
+
+    /// <summary>
+    /// Removes the item associated with the specified key from the cache.
+    /// </summary>
+    /// <param name="key">The key of the item to be removed from the cache.</param>
+    /// <returns>
+    /// <see langword="true"/> if the item was successfully removed;
+    /// otherwise, <see langword="false"/> if the key does not exist or
+    /// the removal operation failed.
+    /// </returns>
+    public bool Remove(TKey key)
+    {
+        if (key is null)
+            return false;
+
+        return RemoveInternal(key);
+    }
+
+    /// <summary>
+    /// Removes all items from the cache.
+    /// </summary>
+    /// <remarks>
+    /// This method clears all cached items stored in the file cache, leaving it empty.
+    /// </remarks>
+    public void Clear()
+    {
+        ClearInternal();
     }
 }

@@ -13,7 +13,7 @@ public interface ICache<in TKey, TValue>
     /// <returns>
     /// true if the key exists and the value was successfully retrieved; otherwise, false.
     /// </returns>
-    bool TryGet(TKey key, out TValue value);
+    bool TryGet(TKey key, out TValue? value);
 
     /// <summary>
     /// Sets the specified key and value in the cache.
