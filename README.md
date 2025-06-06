@@ -35,7 +35,7 @@ A collection of .NET utility classes providing bidirectional dictionaries, obser
   - `TimestampedMemoryCache<TKey,TValue>` adds timestamp tracking for each entry.
   - `FileCache<TKey,TValue>` provides on-disk persistence.
   - `S3Cache<TKey,TValue>` integrates Amazon S3 as a backing store.
-  - Hybrid caches (`TieredCache`, `ParallelCache`, `DirectionalTierCache`) combine multiple caches for advanced scenarios.
+  - Hybrid caches (`TieredCache`, `ParallelCache`, `DirectionalTierCache`, `TimeBasedHybridCache`) combine multiple caches for advanced scenarios.
 
 ## Installation
 
@@ -177,6 +177,22 @@ if (cache.TryGetWithTimestamp("user", out var value, out var ts))
 
 Hybrid caches such as `TieredCache` can subscribe to `OnSet` events from this
 cache to migrate entries between tiers based on custom rules.
+
+`TimeBasedHybridCache` automatically demotes entries from memory to a persistent
+cache after they exceed a specified age:
+
+```csharp
+using DomsUtils.Services.Caching.Hybrids;
+
+var memory = new TimestampedMemoryCache<string,int>();
+var persistent = new FileCache<string,int>("/tmp/cache");
+
+var hybrid = new TimeBasedHybridCache<string,int>(memory, persistent,
+    TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(1));
+
+hybrid.Set("session", 123);
+hybrid.TriggerMigrationNow(); // manually run migration check
+```
 
 ## API Reference
 
