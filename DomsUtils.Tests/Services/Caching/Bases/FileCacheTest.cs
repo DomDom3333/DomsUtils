@@ -52,6 +52,14 @@ public class FileCacheTest
     /// </summary>
     private ILogger<FileCache<string, TestData>> _logger = null!;
 
+    [DllImport("libc")]
+    private static extern uint geteuid();
+
+    private static bool IsRunningAsRoot()
+    {
+        return !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && geteuid() == 0;
+    }
+
     /// <summary>
     /// Sets up the necessary resources and initialization logic for the FileCacheTest class.
     /// This method is automatically invoked before each test case execution in the FileCacheTest
@@ -580,10 +588,23 @@ public class FileCacheTest
             Assert.Inconclusive("ReadOnly attribute on directories does not prevent writes on Windows. Test skipped.");
             return;
         }
+
+        if (IsRunningAsRoot())
+        {
+            Assert.Inconclusive("Test skipped when running with elevated privileges, as permission checks are bypassed.");
+            return;
+        }
         
         // Arrange
         var dirInfo = new DirectoryInfo(_tempDirectory);
-        dirInfo.Attributes |= FileAttributes.ReadOnly;
+
+        // On Unix-like systems FileAttributes.ReadOnly does not actually
+        // prevent writing to directories. Use Unix file permissions instead
+        // to remove write access.
+        UnixFileMode originalMode = dirInfo.UnixFileMode;
+        dirInfo.UnixFileMode = originalMode & ~(UnixFileMode.UserWrite |
+                                               UnixFileMode.GroupWrite |
+                                               UnixFileMode.OtherWrite);
 
         try
         {
@@ -595,8 +616,8 @@ public class FileCacheTest
         }
         finally
         {
-            // Cleanup
-            dirInfo.Attributes &= ~FileAttributes.ReadOnly;
+            // Cleanup - restore the original permissions
+            dirInfo.UnixFileMode = originalMode;
         }
     }
 
