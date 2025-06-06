@@ -10,7 +10,8 @@ A collection of .NET utility classes providing bidirectional dictionaries, obser
   - [BiMap](#bimap)  
   - [ObservableBiMap](#observablebimap)  
   - [Extension Methods](#extension-methods)  
-  - [JSON Serialization](#json-serialization)  
+  - [JSON Serialization](#json-serialization)
+  - [Caching](#caching)
 - [API Reference](#api-reference)  
 - [Testing](#testing)  
 - [Contributing](#contributing)  
@@ -27,8 +28,14 @@ A collection of .NET utility classes providing bidirectional dictionaries, obser
   - `ToBiMapSafe()` overloads with conflict-resolution callbacks.  
   - `IEnumerable<T>.ToBiMap()` overloads mapping sequences to bi-maps.  
 - **JSON Support**  
-  - `BiMapJsonExtensions.Serialize()` / `.Deserialize()` for easy JSON round-trip.  
+  - `BiMapJsonExtensions.Serialize()` / `.Deserialize()` for easy JSON round-trip.
   - Custom `JsonConverterFactory`/`JsonConverter` preserving bijectivity.
+- **Caching**
+  - `MemoryCache<TKey,TValue>` for basic in-memory storage.
+  - `TimestampedMemoryCache<TKey,TValue>` adds timestamp tracking for each entry.
+  - `FileCache<TKey,TValue>` provides on-disk persistence.
+  - `S3Cache<TKey,TValue>` integrates Amazon S3 as a backing store.
+  - Hybrid caches (`TieredCache`, `ParallelCache`, `DirectionalTierCache`) combine multiple caches for advanced scenarios.
 
 ## Installation
 
@@ -152,6 +159,24 @@ var restored = BiMapJsonExtensions.Deserialize<int,string>(json);
 ```
 
 Under the hood, a custom `JsonConverterFactory` ensures no duplicate values are introduced during deserialization.
+
+### Caching
+
+`TimestampedMemoryCache` behaves like a regular in-memory cache but also stores a
+timestamp for each entry:
+
+```csharp
+using DomsUtils.Services.Caching.Bases;
+
+var cache = new TimestampedMemoryCache<string, int>();
+cache.Set("user", 42);               // timestamp recorded automatically
+
+if (cache.TryGetWithTimestamp("user", out var value, out var ts))
+    Console.WriteLine($"{value} added at {ts}");
+```
+
+Hybrid caches such as `TieredCache` can subscribe to `OnSet` events from this
+cache to migrate entries between tiers based on custom rules.
 
 ## API Reference
 
