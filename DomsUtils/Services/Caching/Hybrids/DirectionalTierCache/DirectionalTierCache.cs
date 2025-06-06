@@ -2,6 +2,7 @@
 using DomsUtils.Services.Caching.Interfaces.Addons;
 using DomsUtils.Services.Caching.Interfaces.Bases;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DomsUtils.Services.Caching.Hybrids.DirectionalTierCache;
 
@@ -50,7 +51,7 @@ public sealed class DirectionalTierCache<TKey, TValue> : ICache<TKey, TValue>, I
         _tiers = new List<ICache<TKey, TValue>>(tiers).ToArray();
         _cacheDirection = cacheDirection;
         _migrationStrategy = migrationStrategy;
-        _logger = logger;
+        _logger = logger ?? NullLogger.Instance;
 
         _logger.LogInformation("DirectionalTierCache initialized with {TierCount} tiers.", _tiers.Length);
 
