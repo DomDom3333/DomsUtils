@@ -7,7 +7,7 @@ A growing collection of general‑purpose utilities for .NET projects. The libra
 - **[BiMap](DomsUtils/DataStructures/BiMap/README.md)** – bidirectional dictionary implementation.
 - **[CircularBuffer](DomsUtils/DataStructures/CircularBuffer/Base/README.md)** – fixed size queue with constant time operations.
 - **[Caching](DomsUtils/Services/Caching/README.md)** – memory, file and S3 based caches with hybrid compositions.
-- **[Pipeline](DomsUtils/Services/Pipeline/README.md)** – composable channel pipeline for async workloads.
+- **[Pipeline](DomsUtils/Services/Pipeline/README.md)** – composable channel pipeline for async workloads with built‑in block modifiers.
 - **[Async Utils](DomsUtils/Tooling/Async/README.md)** – helpers for running delegates with retries and timeouts.
 - **[Enumerable Extensions](DomsUtils/Tooling/ExtensionMethods/README.md)** – LINQ style helpers for `IEnumerable<T>`.
 
