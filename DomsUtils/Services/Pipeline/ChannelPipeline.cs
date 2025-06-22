@@ -219,9 +219,13 @@ public class ChannelPipeline<T> : IAsyncDisposable
             await foreach (var item in reader.ReadAllAsync(ct))
                 await writer.WriteAsync(item, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) 
-        { 
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
             // Expected cancellation, don't propagate
+        }
+        catch (ChannelClosedException)
+        {
+            // Target channel closed, stop fan out
         }
         catch (Exception ex)
         {
