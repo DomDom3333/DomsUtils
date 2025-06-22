@@ -7,7 +7,7 @@ A curated collection of utilities used across several .NET projects. The solutio
 - **[BiMap](DomsUtils/DataStructures/BiMap/README.md)** – bidirectional dictionaries with JSON support and observable variants.
 - **[CircularBuffer](DomsUtils/DataStructures/CircularBuffer/Base/README.md)** – fixed size queue offering constant time operations.
 - **[Caching](DomsUtils/Services/Caching/README.md)** – memory, file and S3 based caches with hybrid compositions and migration helpers.
-- **[Pipeline](DomsUtils/Services/Pipeline/README.md)** – composable channel pipeline for asynchronous workloads.
+- **[Pipeline](DomsUtils/Services/Pipeline/README.md)** – composable channel pipeline for asynchronous workloads with built‑in block modifiers.
 - **[Async Utils](DomsUtils/Tooling/Async/README.md)** – helpers for running delegates with retries and timeouts.
 - **[Enumerable Extensions](DomsUtils/Tooling/ExtensionMethods/README.md)** – LINQ style helpers for `IEnumerable<T>`.
 
@@ -17,7 +17,7 @@ Requires **.NET 9** or later.
 
 ```bash
 # clone and build
-git clone https://gitea.essenhofer.at/DomDom3333/DomsUtils.git
+git clone https://github.com/DomDom3333/DomsUtils.git
 cd DomsUtils
  dotnet build
 ```
