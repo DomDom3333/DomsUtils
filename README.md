@@ -17,7 +17,7 @@ Requires **.NET 9** or later.
 
 ```bash
 # clone and build
-git clone https://gitea.essenhofer.at/DomDom3333/DomsUtils.git
+git clone https://github.com/DomDom3333/DomsUtils.git
 cd DomsUtils
  dotnet build
 ```
