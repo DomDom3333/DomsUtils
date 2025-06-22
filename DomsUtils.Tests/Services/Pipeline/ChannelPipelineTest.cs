@@ -16,7 +16,7 @@ public class ChannelPipelineTest
     [TestMethod]
     public async Task Pipeline_WithSingleBlock_ProcessesAllItems()
     {
-        var pipeline = new ChannelPipeline<int>();
+        await using var pipeline = new ChannelPipeline<int>();
         pipeline.AddBlock(new BlockOptions<int>
         {
             AsyncTransform = async (v, ct) => { await Task.Yield(); return v * 2; }
@@ -41,12 +41,13 @@ public class ChannelPipelineTest
     {
         var pipeline = new ChannelPipeline<int>();
         Assert.ThrowsException<ArgumentNullException>(() => pipeline.AddBlock(null!));
+        pipeline.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     [TestMethod]
     public async Task Build_WithPreserveOrder_ReordersOutput()
     {
-        var pipeline = new ChannelPipeline<int>(preserveOrder: true);
+        await using var pipeline = new ChannelPipeline<int>(preserveOrder: true);
 
         var gates = new TaskCompletionSource<int>[5];
         for (int i = 0; i < gates.Length; i++)
@@ -83,7 +84,7 @@ public class ChannelPipelineTest
     [TestMethod]
     public async Task Build_ReorderBufferExceeded_ThrowsInvalidOperationException()
     {
-        var pipeline = new ChannelPipeline<int>(preserveOrder: true, reorderMaxBufferSize: 0);
+        await using var pipeline = new ChannelPipeline<int>(preserveOrder: true, reorderMaxBufferSize: 0);
 
         var gates = new[] { new TaskCompletionSource<int>(), new TaskCompletionSource<int>() };
 
@@ -109,6 +110,7 @@ public class ChannelPipelineTest
 
         await pipeline.CompleteAsync();
         await readTask;
+        await enumerator.DisposeAsync();
     }
 
     [TestMethod]
@@ -120,7 +122,7 @@ public class ChannelPipelineTest
             return new Envelope<int>(res.Index, res.Value * 3);
         };
 
-        var pipeline = new ChannelPipeline<int>();
+        await using var pipeline = new ChannelPipeline<int>();
         pipeline.AddBlock(new BlockOptions<int>
         {
             AsyncTransform = (v, ct) => ValueTask.FromResult(v + 1),
@@ -145,7 +147,7 @@ public class ChannelPipelineTest
     public async Task AddBlock_WithCanceledToken_SkipsProcessing()
     {
         var cts = new CancellationTokenSource();
-        var pipeline = new ChannelPipeline<int>();
+        await using var pipeline = new ChannelPipeline<int>();
 
         pipeline.AddBlock(new BlockOptions<int>
         {
@@ -187,7 +189,7 @@ public class ChannelPipelineTest
     public async Task TransformThrows_WithErrorHandler_ContinuesProcessing()
     {
         var errors = new List<Exception>();
-        var pipeline = new ChannelPipeline<int>();
+        await using var pipeline = new ChannelPipeline<int>();
 
         pipeline.AddBlock(new BlockOptions<int>
         {
