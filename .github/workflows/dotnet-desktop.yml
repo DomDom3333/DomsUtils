@@ -2,8 +2,7 @@ name: .NET CI
 
 on:
   push:
-    branches: [ "main", "release/*" ]
-    tags: [ "v*" ]        # trigger on semver-style tags
+    branches: [ "main" ]
   pull_request:
 
 jobs:
