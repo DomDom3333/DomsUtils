@@ -1,9 +1,8 @@
 # AsyncUtils
 
-Utility helpers for running synchronous and asynchronous delegates.
+Utility helpers for running synchronous and asynchronous delegates with safety features like retries and timeouts. Useful in services that need lightweight background execution or robust retry logic.
 
 ## Functions
-
 - `RunSync(Action)` and `RunSync(Func<T>)` – execute immediately.
 - `RunAsync(Func<Task>)` / `RunAsync(Func<Task<T>>)` – run on the thread pool.
 - `FireAndForget(Func<Task>, onError)` – background run with optional error handler.
@@ -11,7 +10,6 @@ Utility helpers for running synchronous and asynchronous delegates.
 - `RetryAsync(operation, maxRetries)` – retry with exponential backoff.
 
 ## Example
-
 ```csharp
 using DomsUtils.Tooling.Async;
 
@@ -23,4 +21,3 @@ AsyncUtils.FireAndForget(async () =>
     Console.WriteLine("done");
 });
 ```
-

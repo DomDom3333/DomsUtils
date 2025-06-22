@@ -52,6 +52,30 @@ jobs:
             cp "$f" "wiki-pages/${page}.md"
           done
 
+      - name: Fix wiki links
+        if: github.event_name == 'push'
+        run: |
+          python3 - <<'EOF'
+          import os, re
+          base = 'wiki-pages'
+          pattern = re.compile(r'\(DomsUtils/([^)]*/README\.md)\)')
+          for root, _, files in os.walk(base):
+              for fname in files:
+                  if not fname.endswith('.md'):
+                      continue
+                  path = os.path.join(root, fname)
+                  text = open(path).read()
+                  def repl(m):
+                      rel = m.group(1)
+                      rel = rel.removeprefix('DomsUtils/')
+                      rel = rel.removesuffix('/README.md')
+                      rel = rel.replace('/', '-')
+                      return f'({rel}.md)'
+                  new_text = pattern.sub(repl, text)
+                  if new_text != text:
+                      open(path, 'w').write(new_text)
+          EOF
+
       - name: Publish readmes to wiki
         if: github.event_name == 'push'
         uses: SwiftDocOrg/github-wiki-publish-action@1.0.0
