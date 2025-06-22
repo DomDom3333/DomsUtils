@@ -153,23 +153,21 @@ public class ChannelPipeline<T> : IAsyncDisposable
             .Select(_ => CreateAndTrackChannel(channelOptions))
             .ToArray();
 
-        // processors
-        for (int i = 0; i < newFan; i++)
-        {
-            var rdr = _readers[_currentParallelism > 1 ? i % _currentParallelism : 0];
-            var wr  = nextChans[i].Writer;
-            TrackTask(Process(rdr, wr, transform, cancellationToken, onError));
-        }
-
-        // merge if collapsing
         if (_currentParallelism > 1 && newFan == 1)
         {
-            var merged = CreateAndTrackChannel();
-            var tasks = _readers
-                .Select(rdr => FanOut(rdr, merged.Writer, cancellationToken, onError, completeWriter: false))
-                .ToArray();
-            TrackTask(Task.WhenAll(tasks).ContinueWith(_ => merged.Writer.TryComplete()));
-            nextChans[0] = merged;
+            // Collapse existing readers into one before processing
+            var mergedReader = MergeReaders(_readers);
+            TrackTask(Process(mergedReader, nextChans[0].Writer, transform, cancellationToken, onError));
+        }
+        else
+        {
+            // processors
+            for (int i = 0; i < newFan; i++)
+            {
+                var rdr = _readers[_currentParallelism > 1 ? i % _currentParallelism : 0];
+                var wr  = nextChans[i].Writer;
+                TrackTask(Process(rdr, wr, transform, cancellationToken, onError));
+            }
         }
 
         _readers = nextChans.Select(c => c.Reader).ToList();

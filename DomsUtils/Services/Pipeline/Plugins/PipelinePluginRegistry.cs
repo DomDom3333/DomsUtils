@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace DomsUtils.Services.Pipeline.PipelinePlugin;
+namespace DomsUtils.Services.Pipeline.Plugins;
 
 /// <summary>
 /// Registry that manages plugin instances associated with pipelines.

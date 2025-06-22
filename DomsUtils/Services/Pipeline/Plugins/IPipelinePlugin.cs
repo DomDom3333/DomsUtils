@@ -1,4 +1,4 @@
-namespace DomsUtils.Services.Pipeline.PipelinePlugin;
+namespace DomsUtils.Services.Pipeline.Plugins;
 
 /// <summary>
 /// Defines a plugin that can be attached to a ChannelPipeline to extend its functionality.

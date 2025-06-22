@@ -1,4 +1,4 @@
-namespace DomsUtils.Services.Pipeline.PipelinePlugin;
+namespace DomsUtils.Services.Pipeline.Plugins;
 
 /// <summary>
 /// Extension methods for working with pipeline plugins.
@@ -16,6 +16,9 @@ public static class PipelinePluginExtensions
     {
         // Register the plugin with the registry
         PipelinePluginRegistry.RegisterPlugin(pipeline, plugin);
+
+        // Ensure plugin cleanup when the pipeline is disposed
+        PipelineResourceRegistry.RegisterResource(pipeline, new PluginResource<T>());
 
         // Notify the plugin it's being attached
         plugin.OnAttach(pipeline);

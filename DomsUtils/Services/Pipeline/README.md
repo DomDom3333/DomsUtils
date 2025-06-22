@@ -121,44 +121,16 @@ StorageBlockModifiers.SkipIfStored<string, string, string>(
 
 ## Using the Plugin System
 
-The plugin system allows you to extend pipeline functionality with reusable components:
+The plugin system allows you to extend pipeline functionality with reusable components. The library includes a simple `LoggingPlugin<T>` that logs when a pipeline is created and disposed:
 
 ```csharp
-// Implement a custom plugin
-public class LoggingPlugin<T> : IPipelinePlugin<T>
-{
-    private readonly ILogger _logger;
-
-    public string Name => "LoggingPlugin";
-
-    public LoggingPlugin(ILogger logger)
-    {
-        _logger = logger;
-    }
-
-    public void OnAttach(ChannelPipeline<T> pipeline)
-    {
-        _logger.LogInformation("Pipeline created");
-    }
-
-    public void OnDispose(ChannelPipeline<T> pipeline)
-    {
-        _logger.LogInformation("Pipeline disposed");
-    }
-}
-
-// Use the plugin
 var pipeline = new ChannelPipeline<string>()
     .UsePlugin(new LoggingPlugin<string>(logger))
     .UsePlugin(new StoragePlugin<string, string, int>());
 
-// Get a plugin instance
+// Retrieve a plugin instance
 var storage = pipeline.GetPlugin<string, StoragePlugin<string, string, int>>();
-if (storage != null)
-{
-    // Use the storage directly
-    storage.Storage.SetValue("global", 100);
-}
+storage?.Storage.SetValue("global", 100);
 ```
 
 ## Creating Custom Storage Implementations
