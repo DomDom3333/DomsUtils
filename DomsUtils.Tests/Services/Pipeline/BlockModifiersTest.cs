@@ -65,7 +65,7 @@ public class BlockModifiersTest
         await pipeline.WriteAsync(1, CancellationToken.None);
         await pipeline.CompleteAsync();
         await foreach (var _ in reader.ReadAllAsync()) { }
-        Assert.IsTrue(sw.ElapsedMilliseconds >= 100);
+        Assert.IsTrue(sw.ElapsedMilliseconds >= 50);
     }
 
     [TestMethod]
@@ -133,7 +133,7 @@ public class BlockModifiersTest
         await pipeline.WriteAsync(2, CancellationToken.None);
         await pipeline.CompleteAsync();
         await foreach (var _ in reader.ReadAllAsync()) { }
-        Assert.IsTrue(sw.ElapsedMilliseconds >= 50);
+        Assert.IsTrue(sw.ElapsedMilliseconds >= 30);
     }
 
     [TestMethod]

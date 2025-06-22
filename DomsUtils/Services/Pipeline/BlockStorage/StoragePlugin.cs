@@ -1,4 +1,4 @@
-using DomsUtils.Services.Pipeline.PipelinePlugin;
+using DomsUtils.Services.Pipeline.Plugins;
 
 namespace DomsUtils.Services.Pipeline.BlockStorage;
 
