@@ -1,9 +1,9 @@
+---
 name: .NET CI
 
 on:
   push:
-    branches: [ "main", "release/*" ]
-    tags: [ "v*" ]        # trigger on semver-style tags
+    branches: ["main"]
   pull_request:
 
 jobs:
@@ -11,31 +11,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Setup .NET 9.0
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: '9.0.x'
+      - name: Setup .NET 9.0
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '9.0.x'
 
-    - name: Restore
-      run: dotnet restore
+      - name: Restore
+        run: dotnet restore
 
-    - name: Build
-      run: dotnet build --no-restore --configuration Release
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
 
-    - name: Test
-      run: dotnet test --no-build --configuration Release --verbosity normal
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal
 
-    - name: Pack
-      run: dotnet pack DomsUtils/DomsUtils.csproj --no-build --configuration Release --output ./artifacts
+      - name: Pack
+        run: dotnet pack DomsUtils/DomsUtils.csproj --no-build --configuration Release --output ./artifacts
 
-    - name: Publish to NuGet.org
-      #if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-      env:
-        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-      run: |
-        dotnet nuget push ./artifacts/*.nupkg \
-          --source https://api.nuget.org/v3/index.json \
-          --api-key $NUGET_API_KEY \
-          --skip-duplicate
+      - name: Publish to NuGet.org
+        #if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push ./artifacts/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key $NUGET_API_KEY \
+            --skip-duplicate
+
+      - name: Prepare wiki content
+        if: github.event_name == 'push'
+        run: |
+          mkdir wiki-pages
+          cp README.md wiki-pages/Home.md
+          find DomsUtils -name README.md | while read f; do
+            rel=${f#DomsUtils/}
+            page=${rel%/README.md}
+            page=${page//\//-}
+            cp "$f" "wiki-pages/${page}.md"
+          done
+
+      - name: Fix wiki links
+        if: github.event_name == 'push'
+        run: |
+          python3 - <<'EOF'
+          import os, re
+          base = 'wiki-pages'
+          pattern = re.compile(r'\(DomsUtils/([^)]*/README\.md)\)')
+          for root, _, files in os.walk(base):
+              for fname in files:
+                  if not fname.endswith('.md'):
+                      continue
+                  path = os.path.join(root, fname)
+                  text = open(path).read()
+                  def repl(m):
+                      rel = m.group(1)
+                      rel = rel.removeprefix('DomsUtils/')
+                      rel = rel.removesuffix('/README.md')
+                      rel = rel.replace('/', '-')
+                      return f'({rel}.md)'
+                  new_text = pattern.sub(repl, text)
+                  if new_text != text:
+                      open(path, 'w').write(new_text)
+          EOF
+
+      - name: Publish readmes to wiki
+        if: github.event_name == 'push'
+        uses: SwiftDocOrg/github-wiki-publish-action@1.0.0
+        with:
+          path: wiki-pages
+        env:
+          GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}

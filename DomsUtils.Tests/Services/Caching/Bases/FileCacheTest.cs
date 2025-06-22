@@ -580,6 +580,12 @@ public class FileCacheTest
             Assert.Inconclusive("ReadOnly attribute on directories does not prevent writes on Windows. Test skipped.");
             return;
         }
+
+        if (Environment.UserName == "root")
+        {
+            Assert.Inconclusive("Running as root bypasses read-only restrictions. Test skipped.");
+            return;
+        }
         
         // Arrange
         var dirInfo = new DirectoryInfo(_tempDirectory);

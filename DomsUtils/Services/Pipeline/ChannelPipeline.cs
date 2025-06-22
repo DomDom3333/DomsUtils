@@ -153,14 +153,6 @@ public class ChannelPipeline<T> : IAsyncDisposable
             .Select(_ => CreateAndTrackChannel(channelOptions))
             .ToArray();
 
-        // fan-out from single reader
-        if (_currentParallelism == 1 && newFan > 1)
-        {
-            var src = _readers[0];
-            foreach (var ch in nextChans)
-                TrackTask(FanOut(src, ch.Writer, cancellationToken, onError));
-        }
-
         // processors
         for (int i = 0; i < newFan; i++)
         {
@@ -173,8 +165,10 @@ public class ChannelPipeline<T> : IAsyncDisposable
         if (_currentParallelism > 1 && newFan == 1)
         {
             var merged = CreateAndTrackChannel();
-            foreach (var rdr in _readers)
-                TrackTask(FanOut(rdr, merged.Writer, cancellationToken, onError));
+            var tasks = _readers
+                .Select(rdr => FanOut(rdr, merged.Writer, cancellationToken, onError, completeWriter: false))
+                .ToArray();
+            TrackTask(Task.WhenAll(tasks).ContinueWith(_ => merged.Writer.TryComplete()));
             nextChans[0] = merged;
         }
 
@@ -209,19 +203,25 @@ public class ChannelPipeline<T> : IAsyncDisposable
     /// <param name="ct">The cancellation token used to propagate notification of cancellation.</param>
     /// <param name="onError">An optional action invoked when an exception occurs during processing.</param>
     /// <returns>A task representing the asynchronous operation of the fan-out process.</returns>
-    private async Task FanOut(ChannelReader<Envelope<T>> reader,
+    private async Task FanOut(
+        ChannelReader<Envelope<T>> reader,
         ChannelWriter<Envelope<T>> writer,
         CancellationToken ct,
-        Action<Exception>? onError)
+        Action<Exception>? onError,
+        bool completeWriter = true)
     {
         try
         {
             await foreach (var item in reader.ReadAllAsync(ct))
                 await writer.WriteAsync(item, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) 
-        { 
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
             // Expected cancellation, don't propagate
+        }
+        catch (ChannelClosedException)
+        {
+            // Target channel closed, stop fan out
         }
         catch (Exception ex)
         {
@@ -232,7 +232,8 @@ public class ChannelPipeline<T> : IAsyncDisposable
         }
         finally
         {
-            writer.TryComplete();
+            if (completeWriter)
+                writer.TryComplete();
         }
     }
 
@@ -387,8 +388,10 @@ public class ChannelPipeline<T> : IAsyncDisposable
     private ChannelReader<Envelope<T>> MergeReaders(IEnumerable<ChannelReader<Envelope<T>>> srcs)
     {
         var merged = CreateAndTrackChannel();
-        foreach (var r in srcs)
-            TrackTask(FanOut(r, merged.Writer, CancellationToken.None, null));
+        var tasks = srcs
+            .Select(r => FanOut(r, merged.Writer, _completionCts.Token, null, completeWriter: false))
+            .ToArray();
+        TrackTask(Task.WhenAll(tasks).ContinueWith(_ => merged.Writer.TryComplete()));
         return merged.Reader;
     }
 
