@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using DomsUtils.Services.Pipeline.BlockStorage;
-using DomsUtils.Services.Pipeline.PipelinePlugin;
+using DomsUtils.Services.Pipeline.Plugins;
 using DomsUtils.Services.Pipeline.BlockStorage;
 
 namespace DomsUtils.Services.Pipeline.Examples;

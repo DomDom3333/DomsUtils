@@ -1,5 +1,5 @@
 using DomsUtils.Services.Pipeline.BlockStorage;
-using DomsUtils.Services.Pipeline.PipelinePlugin;
+using DomsUtils.Services.Pipeline.Plugins;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
@@ -174,7 +174,7 @@ public static class CustomPluginExample
                     int wordCount = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
 
                     // Store the count
-                    var storage = pipeline.GetStorage<string, string, int>();
+                    var storage = pipeline.GetStorage<string, int>();
                     storage?.SetValue(text, wordCount);
 
                     return $"{text} ({wordCount} words)";

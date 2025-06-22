@@ -1,4 +1,4 @@
-namespace DomsUtils.Services.Pipeline.PipelinePlugin;
+namespace DomsUtils.Services.Pipeline.Plugins;
 
 /// <summary>
 /// Adapts the plugin system to the IPipelineResource interface to handle pipeline lifecycle events.
