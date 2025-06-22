@@ -357,6 +357,9 @@ public class ChannelPipeline<T> : IAsyncDisposable
             // Log timeout if needed - tasks may still be running
         }
 
+        // Notify all registered resources that the pipeline is being disposed
+        PipelineResourceRegistry.NotifyPipelineDisposing(this);
+
         _completionCts.Dispose();
     }
 
