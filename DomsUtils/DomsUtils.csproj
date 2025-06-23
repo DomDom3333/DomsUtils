@@ -10,6 +10,9 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <Content Include="..\GitVersion.yml">
+        <Link>GitVersion.yml</Link>
+      </Content>
       <Content Include="..\License.md">
         <Link>License.md</Link>
       </Content>
