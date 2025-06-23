@@ -133,6 +133,39 @@ public class ChannelPipeline<T> : IAsyncDisposable
     }
 
     /// <summary>
+    /// Adds a processing block using a simple transform delegate.
+    /// </summary>
+    /// <param name="transform">Async transform to apply to each item.</param>
+    /// <param name="parallelism">Degree of parallelism for the block.</param>
+    /// <param name="channelOptions">Channel options for the block.</param>
+    /// <param name="cancellationToken">Cancellation token for the block.</param>
+    /// <param name="onError">Optional error handler.</param>
+    /// <param name="modifiers">Optional modifiers applied to the block.</param>
+    /// <returns>The pipeline instance for chaining.</returns>
+    public ChannelPipeline<T> AddBlock(
+        Func<T, CancellationToken, ValueTask<T>> transform,
+        int parallelism = 1,
+        BoundedChannelOptions? channelOptions = null,
+        CancellationToken cancellationToken = default,
+        Action<Exception>? onError = null,
+        params BlockModifier<T>[] modifiers)
+    {
+        ArgumentNullException.ThrowIfNull(transform);
+
+        var options = new BlockOptions<T>
+        {
+            AsyncTransform = transform,
+            Parallelism = parallelism,
+            ChannelOptions = channelOptions,
+            CancellationToken = cancellationToken,
+            OnError = onError,
+            Modifiers = modifiers.Length > 0 ? modifiers : null
+        };
+
+        return AddBlock(options);
+    }
+
+    /// <summary>
     /// Adds a processing block to the pipeline that operates on envelopes of data with optional transformations and parallelism.
     /// </summary>
     /// <param name="transform">The transformation function to apply to each envelope.</param>

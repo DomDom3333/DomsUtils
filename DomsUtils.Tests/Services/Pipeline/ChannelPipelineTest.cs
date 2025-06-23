@@ -37,6 +37,26 @@ public class ChannelPipelineTest
     }
 
     [TestMethod]
+    public async Task Pipeline_WithDelegateOverload_ProcessesAllItems()
+    {
+        await using var pipeline = new ChannelPipeline<int>();
+        pipeline.AddBlock(async (v, ct) => { await Task.Yield(); return v * 3; });
+
+        var reader = pipeline.Build();
+
+        for (var i = 1; i <= 5; i++)
+            await pipeline.WriteAsync(i, CancellationToken.None);
+
+        await pipeline.CompleteAsync();
+
+        var results = new List<int>();
+        await foreach (var item in reader.ReadAllAsync())
+            results.Add(item);
+
+        CollectionAssert.AreEquivalent(new[] { 3, 6, 9, 12, 15 }, results);
+    }
+
+    [TestMethod]
     public void AddBlock_NullOptions_ThrowsArgumentNullException()
     {
         var pipeline = new ChannelPipeline<int>();
