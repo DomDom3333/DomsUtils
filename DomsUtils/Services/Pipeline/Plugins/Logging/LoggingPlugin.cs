@@ -1,3 +1,4 @@
+using DomsUtils.Services.Pipeline.Plugins.Core;
 using Microsoft.Extensions.Logging;
 
 namespace DomsUtils.Services.Pipeline.Plugins;

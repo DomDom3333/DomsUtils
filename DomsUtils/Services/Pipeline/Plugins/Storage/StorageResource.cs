@@ -1,4 +1,4 @@
-namespace DomsUtils.Services.Pipeline.BlockStorage;
+namespace DomsUtils.Services.Pipeline.Plugins.Storage;
 
 /// <summary>
 /// Adapts storage to the IPipelineResource interface to handle pipeline lifecycle events.

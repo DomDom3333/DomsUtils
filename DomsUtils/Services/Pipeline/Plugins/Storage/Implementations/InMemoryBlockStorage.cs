@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
+using DomsUtils.Services.Pipeline.BlockStorage;
 
-namespace DomsUtils.Services.Pipeline.BlockStorage;
+namespace DomsUtils.Services.Pipeline.Plugins.Storage.Implementations;
 
 /// <summary>
-/// Default in-memory implementation of <see cref="IBlockStorage{TKey, TValue}"/> using a thread-safe dictionary.
+/// Default in-memory implementation of <see cref="IBlockStorage{TKey,TValue}"/> using a thread-safe dictionary.
 /// </summary>
 /// <typeparam name="TKey">The type of keys used for storage access.</typeparam>
 /// <typeparam name="TValue">The type of values stored in the storage.</typeparam>

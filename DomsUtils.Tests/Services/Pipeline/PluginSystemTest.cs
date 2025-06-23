@@ -2,6 +2,7 @@ using DomsUtils.Services.Pipeline;
 using DomsUtils.Services.Pipeline.Plugins;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading.Tasks;
+using DomsUtils.Services.Pipeline.Plugins.Core;
 
 namespace DomsUtils.Tests.Services.Pipeline;
 

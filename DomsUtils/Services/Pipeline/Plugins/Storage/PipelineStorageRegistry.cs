@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using DomsUtils.Services.Pipeline.BlockStorage;
+using DomsUtils.Services.Pipeline.Plugins.Storage.Implementations;
 
-namespace DomsUtils.Services.Pipeline.BlockStorage;
+namespace DomsUtils.Services.Pipeline.Plugins.Storage;
 
 /// <summary>
 /// Registry that manages storage instances associated with pipelines.

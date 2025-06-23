@@ -22,6 +22,10 @@
       <PackageReference Include="AWSSDK.S3" Version="4.0.1" />
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="Services\Pipeline\Plugins\IPipelinePlugin.cs" />
+    </ItemGroup>
 <PropertyGroup>
   <!-- Identity -->
   <PackageId>DomsUtils</PackageId>

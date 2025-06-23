@@ -1,4 +1,6 @@
-namespace DomsUtils.Services.Pipeline.BlockStorage;
+using DomsUtils.Services.Pipeline.BlockStorage;
+
+namespace DomsUtils.Services.Pipeline.Plugins.Storage.Implementations;
 
 /// <summary>
 /// A storage implementation that combines multiple storage instances, trying each in sequence.
