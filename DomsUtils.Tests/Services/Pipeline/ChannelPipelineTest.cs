@@ -234,4 +234,53 @@ public class ChannelPipelineTest
 
         Assert.ThrowsException<ObjectDisposedException>(() => pipeline.Build());
     }
+
+    [TestMethod]
+    public async Task Parallelism_VariesAcrossBlocks_ProcessesAllItems()
+    {
+        await using var pipeline = new ChannelPipeline<int>();
+        pipeline.AddBlock(new BlockOptions<int>
+        {
+            Parallelism = 3,
+            AsyncTransform = async (v, ct) => { await Task.Delay(10, ct); return v * 2; }
+        });
+
+        pipeline.AddBlock(new BlockOptions<int>
+        {
+            Parallelism = 1,
+            AsyncTransform = (v, ct) => ValueTask.FromResult(v - 1)
+        });
+
+        var reader = pipeline.Build();
+
+        for (var i = 1; i <= 5; i++)
+            await pipeline.WriteAsync(i, CancellationToken.None);
+
+        await pipeline.CompleteAsync();
+
+        var results = new List<int>();
+        await foreach (var item in reader.ReadAllAsync())
+            results.Add(item);
+
+        CollectionAssert.AreEquivalent(new[] {1,3,5,7,9}, results);
+    }
+
+    [TestMethod]
+    public async Task CompleteAsync_CanBeCalledMultipleTimes()
+    {
+        await using var pipeline = new ChannelPipeline<int>();
+        pipeline.AddBlock(new BlockOptions<int> { AsyncTransform = (v, ct) => ValueTask.FromResult(v) });
+
+        var reader = pipeline.Build();
+        await pipeline.WriteAsync(1, CancellationToken.None);
+
+        await pipeline.CompleteAsync();
+        await pipeline.CompleteAsync();
+
+        var list = new List<int>();
+        await foreach (var item in reader.ReadAllAsync())
+            list.Add(item);
+
+        CollectionAssert.AreEqual(new[] {1}, list);
+    }
 }

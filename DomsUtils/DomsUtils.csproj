@@ -10,6 +10,9 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <Content Include="..\GitVersion.yml">
+        <Link>GitVersion.yml</Link>
+      </Content>
       <Content Include="..\License.md">
         <Link>License.md</Link>
       </Content>
@@ -21,6 +24,10 @@
     <ItemGroup>
       <PackageReference Include="AWSSDK.S3" Version="4.0.1" />
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="Services\Pipeline\Plugins\IPipelinePlugin.cs" />
     </ItemGroup>
 <PropertyGroup>
   <!-- Identity -->
