@@ -304,12 +304,9 @@ Modifiers are applied in sequence from first to last in the array.
 ```csharp
 using DomsUtils.Services.Pipeline;
 
-// Create a pipeline that doubles numbers
+// Create a pipeline that doubles numbers using the simplified overload
 var pipeline = new ChannelPipeline<int>()
-    .AddBlock(new BlockOptions<int>
-    {
-        AsyncTransform = async (value, ct) => value * 2
-    });
+    .AddBlock(async (value, ct) => value * 2);
 
 // Feed data into the pipeline
 await pipeline.WriteAsync(5, CancellationToken.None);
@@ -333,20 +330,14 @@ await pipeline.DisposeAsync();
 using DomsUtils.Services.Pipeline;
 
 var pipeline = new ChannelPipeline<int>(preserveOrder: true)
-    // First stage: double the values with 4 parallel workers
-    .AddBlock(new BlockOptions<int>
+    // First stage: double the values with 4 parallel workers using the simplified overload
+    .AddBlock(async (v, ct) =>
     {
-        AsyncTransform = async (v, ct) => {
-            await Task.Delay(100, ct); // Simulate work
-            return v * 2;
-        },
-        Parallelism = 4
-    })
+        await Task.Delay(100, ct); // Simulate work
+        return v * 2;
+    }, parallelism: 4)
     // Second stage: add 10 to each value
-    .AddBlock(new BlockOptions<int>
-    {
-        AsyncTransform = async (v, ct) => v + 10
-    });
+    .AddBlock(async (v, ct) => v + 10);
 
 // Process a batch of items
 for (int i = 1; i <= 10; i++)
